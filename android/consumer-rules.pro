@@ -1,0 +1,3 @@
+-keep class com.arkanefans.mnn_engine.runtime.MnnNativeBridge { *; }
+-keep class com.arkanefans.mnn_engine.runtime.MnnNativeSession { *; }
+-keep interface com.arkanefans.mnn_engine.runtime.MnnNativeSession$TokenCallback { *; }

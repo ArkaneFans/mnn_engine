@@ -1,0 +1,101 @@
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:mnn_engine/mnn_engine.dart' show MnnEngineException;
+import 'package:mnn_engine/mnn_engine_method_channel.dart';
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  final platform = MethodChannelMnnEngine();
+  const channel = MethodChannel('com.arkanefans.mnn_engine/methods');
+
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null);
+  });
+
+  test('initialize decodes native engine information', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          expect(call.method, 'initialize');
+          return <String, Object?>{
+            'pluginVersion': '0.0.1',
+            'mnnVersion': '3.6.0',
+            'mnnCommit': 'cc20f672',
+            'abi': 'arm64-v8a',
+            'androidApiLevel': 35,
+            'ndkVersion': '27.3.13750724',
+            'nativeLibraryLoaded': true,
+            'testRootPath': '/data/user/0/app/files/mnn_test',
+          };
+        });
+
+    final info = await platform.initialize();
+
+    expect(info.mnnVersion, '3.6.0');
+    expect(info.mnnCommit, 'cc20f672');
+    expect(info.nativeLibraryLoaded, isTrue);
+  });
+
+  test('checkPort sends host and port', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          expect(call.method, 'checkPort');
+          expect(call.arguments, <String, Object?>{
+            'host': '127.0.0.1',
+            'port': 8081,
+          });
+          return <String, Object?>{'available': true, 'ownedByMnn': false};
+        });
+
+    final result = await platform.checkPort(host: '127.0.0.1', port: 8081);
+
+    expect(result.available, isTrue);
+    expect(result.ownedByMnn, isFalse);
+  });
+
+  test('loadModel decodes native load duration', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          expect(call.method, 'loadModel');
+          expect(call.arguments, <String, Object?>{'modelId': 'local/qwen'});
+          return <String, Object?>{
+            'modelId': 'local/qwen',
+            'modelKey': 'qwen',
+            'displayName': 'Qwen',
+            'modelDirPath': '/models/qwen',
+            'configPath': '/models/qwen/config.json',
+            'sizeBytes': 100,
+            'importedAt': 1,
+            'isActive': true,
+            'loadDurationMs': 1234,
+          };
+        });
+
+    final model = await platform.loadModel('local/qwen');
+
+    expect(model.loadDurationMs, 1234);
+  });
+
+  test('preserves stable native error codes and details', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          throw PlatformException(
+            code: 'port_in_use',
+            message: 'Port is unavailable.',
+            details: <String, Object?>{'port': 8081},
+          );
+        });
+
+    await expectLater(
+      platform.startServer(host: '127.0.0.1', port: 8081),
+      throwsA(
+        isA<MnnEngineException>()
+            .having((error) => error.code, 'code', 'port_in_use')
+            .having((error) => error.details, 'details', <String, Object?>{
+              'port': 8081,
+            }),
+      ),
+    );
+  });
+}

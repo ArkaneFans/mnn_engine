@@ -1,0 +1,21 @@
+* text=auto eol=lf
+
+# Shell scripts must stay executable in WSL/Linux without CRLF parsing issues.
+*.sh text eol=lf
+*.ps1 text eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Keep generated or packaged artifacts binary if they are added in the future.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.jar binary
+*.so binary
+*.zip binary
+*.gz binary
+*.apk binary
+*.aab binary

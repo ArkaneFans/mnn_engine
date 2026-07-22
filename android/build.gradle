@@ -1,0 +1,151 @@
+group = "com.arkanefans.mnn_engine"
+version = "1.0-SNAPSHOT"
+
+buildscript {
+    ext.kotlin_version = "2.1.0"
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath("com.android.tools.build:gradle:8.9.1")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version")
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: "com.android.library"
+apply plugin: "kotlin-android"
+
+def pluginRoot = projectDir.parentFile
+def generatedNativeDir = file("${pluginRoot}/.native/generated/arm64-v8a")
+def generatedMnnLibrary = file("${generatedNativeDir}/libMNN.so")
+def generatedJniLibrary = file("${generatedNativeDir}/libmnn_engine_jni.so")
+def generatedBuildInfo = file("${generatedNativeDir}/mnn_build_info.json")
+def verifierPowerShell = file("${pluginRoot}/scripts/verify_mnn_artifacts.ps1")
+def verifierShell = file("${pluginRoot}/scripts/verify_mnn_artifacts.sh")
+
+tasks.register("prepareMnnNativeArm64") {
+    outputs.files(generatedMnnLibrary, generatedJniLibrary, generatedBuildInfo)
+    doLast {
+        if (generatedMnnLibrary.isFile() && generatedJniLibrary.isFile() && generatedBuildInfo.isFile()) {
+            return
+        }
+        if (!org.gradle.internal.os.OperatingSystem.current().isWindows()) {
+            throw new GradleException(
+                "MNN native artifacts are missing. Run scripts/build_mnn_android.sh in WSL/Linux first."
+            )
+        }
+        exec {
+            workingDir pluginRoot
+            commandLine(
+                "pwsh",
+                "-NoProfile",
+                "-File",
+                file("${pluginRoot}/scripts/build_mnn_android.ps1").absolutePath,
+            )
+        }
+    }
+}
+
+tasks.register("copyMnnNativeArtifacts") {
+    dependsOn("prepareMnnNativeArm64")
+    outputs.files(generatedMnnLibrary, generatedJniLibrary, generatedBuildInfo)
+}
+
+tasks.register("verifyMnnNativeArtifacts") {
+    dependsOn("copyMnnNativeArtifacts")
+    inputs.files(
+        generatedMnnLibrary,
+        generatedJniLibrary,
+        generatedBuildInfo,
+        verifierPowerShell,
+        verifierShell,
+    )
+    doLast {
+        if (org.gradle.internal.os.OperatingSystem.current().isWindows()) {
+            exec {
+                workingDir pluginRoot
+                commandLine(
+                    "pwsh",
+                    "-NoProfile",
+                    "-File",
+                    verifierPowerShell.absolutePath,
+                    "-PluginRoot",
+                    pluginRoot.absolutePath,
+                )
+            }
+        } else if (org.gradle.internal.os.OperatingSystem.current().isLinux()) {
+            exec {
+                workingDir pluginRoot
+                commandLine("bash", verifierShell.absolutePath, pluginRoot.absolutePath)
+            }
+        } else {
+            throw new GradleException("MNN native artifact verification only supports Windows/WSL2 or Linux.")
+        }
+    }
+}
+
+dependencies {
+    implementation("androidx.documentfile:documentfile:1.0.1")
+    implementation("androidx.core:core-ktx:1.15.0")
+    implementation("com.google.code.gson:gson:2.11.0")
+    implementation("io.ktor:ktor-server-core:3.1.3")
+    implementation("io.ktor:ktor-server-netty:3.1.3")
+    implementation("io.ktor:ktor-server-call-logging:3.1.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
+}
+
+android {
+    namespace = "com.arkanefans.mnn_engine"
+
+    compileSdk = 35
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+    }
+
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_11
+    }
+
+    sourceSets {
+        main.java.srcDirs += "src/main/kotlin"
+        main.jniLibs.srcDirs += file("../.native/generated")
+        test.java.srcDirs += "src/test/kotlin"
+    }
+
+    defaultConfig {
+        minSdk = 28
+        consumerProguardFiles "consumer-rules.pro"
+    }
+
+    dependencies {
+        testImplementation("org.jetbrains.kotlin:kotlin-test")
+        testImplementation("org.mockito:mockito-core:5.0.0")
+    }
+
+    testOptions {
+        unitTests.all {
+            useJUnitPlatform()
+
+            testLogging {
+               events "passed", "skipped", "failed", "standardOut", "standardError"
+               outputs.upToDateWhen {false}
+               showStandardStreams = true
+            }
+        }
+    }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn("verifyMnnNativeArtifacts")
+}

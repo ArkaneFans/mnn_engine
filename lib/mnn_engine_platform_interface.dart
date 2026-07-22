@@ -1,0 +1,42 @@
+import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+
+import 'mnn_engine_method_channel.dart';
+import 'src/mnn_models.dart';
+
+abstract class MnnEnginePlatform extends PlatformInterface {
+  MnnEnginePlatform() : super(token: _token);
+
+  static final Object _token = Object();
+  static MnnEnginePlatform _instance = MethodChannelMnnEngine();
+
+  static MnnEnginePlatform get instance => _instance;
+
+  static set instance(MnnEnginePlatform instance) {
+    PlatformInterface.verifyToken(instance, _token);
+    _instance = instance;
+  }
+
+  Future<MnnEngineInfo> initialize();
+  Future<MnnRuntimeSnapshot> getSnapshot();
+  Future<String> getTestRootPath();
+  Future<List<MnnModelInfo>> listImportedModels();
+  Future<MnnModelInfo> importModelDirectory({required bool replaceExisting});
+  Future<void> deleteImportedModel(String modelId);
+  Future<MnnModelInfo> loadModel(String modelId);
+  Future<void> unloadModel();
+  Future<MnnPortCheckResult> checkPort({
+    required String host,
+    required int port,
+  });
+  Future<MnnServerInfo> startServer({
+    required String host,
+    required int port,
+    String? apiKey,
+  });
+  Future<void> stopServer();
+  Future<void> cancelGeneration();
+  Future<List<MnnLogEntry>> getLogSnapshot();
+  Future<void> clearLogs();
+  Stream<MnnRuntimeEvent> get events;
+  Stream<MnnLogEntry> get logs;
+}
