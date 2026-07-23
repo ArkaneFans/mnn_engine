@@ -1,3 +1,7 @@
+## Unreleased
+
+* Add consumer R8 rules for optional Ktor Netty integrations used by the Android loopback server.
+
 ## 0.0.1
 
 * Add Android arm64 MNN 3.6.0 native build and JNI runtime.
