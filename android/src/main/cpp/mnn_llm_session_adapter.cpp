@@ -123,8 +123,32 @@ ChatMessages parseMessages(const std::string& messagesJson) {
     messages.reserve(root.size());
     for (const auto& item : root) {
         const std::string role = item.value("role", "");
-        const std::string content = item.value("content", "");
         if (role.empty()) throw std::invalid_argument("message role is required");
+        if (role == "assistant" && item.contains("tool_calls") && item["tool_calls"].is_array()) {
+            auto complex = item;
+            for (auto& tool_call : complex["tool_calls"]) {
+                if (!tool_call.is_object() || !tool_call.contains("function")) {
+                    throw std::invalid_argument("assistant tool_calls contains an invalid call");
+                }
+                auto& function = tool_call["function"];
+                if (function.contains("arguments") && function["arguments"].is_string()) {
+                    try {
+                        auto arguments = json::parse(function["arguments"].get<std::string>());
+                        if (!arguments.is_object()) {
+                            throw std::invalid_argument("tool_call arguments must contain a JSON object");
+                        }
+                        function["arguments"] = std::move(arguments);
+                    } catch (const std::exception&) {
+                        throw std::invalid_argument("tool_call arguments must contain a JSON object");
+                    }
+                }
+            }
+            messages.emplace_back("json", complex.dump());
+            continue;
+        }
+        const std::string content = item.contains("content") && !item["content"].is_null()
+                ? item["content"].get<std::string>()
+                : "";
         messages.emplace_back(role, content);
     }
     return messages;

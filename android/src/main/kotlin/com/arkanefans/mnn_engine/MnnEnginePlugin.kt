@@ -129,7 +129,7 @@ class MnnEnginePlugin :
                 }
                 "startServer" -> executeIo(result) {
                     currentService.startServer(
-                        host = call.argument<String>("host") ?: "127.0.0.1",
+                        bindMode = call.argument<String>("bindMode") ?: "loopback",
                         port = call.argument<Int>("port") ?: 8081,
                         apiKey = call.argument<String>("apiKey"),
                     )
@@ -140,7 +140,7 @@ class MnnEnginePlugin :
                 }
                 "checkPort" -> executeIo(result) {
                     currentService.checkPort(
-                        call.argument<String>("host") ?: "127.0.0.1",
+                        call.argument<String>("bindMode") ?: "loopback",
                         call.argument<Int>("port") ?: 8081,
                     )
                 }

@@ -47,13 +47,44 @@ class MnnChatRequestParserTest {
     }
 
     @Test
-    fun rejectsUnsupportedTools() {
+    fun parsesToolsAndRequiredChoice() {
+        val request = MnnChatRequestParser.parse(
+            """{
+              "messages":[{"role":"user","content":"hello"}],
+              "tools":[{"type":"function","function":{"name":"get_time","parameters":{"type":"object"}}}],
+              "tool_choice":"required",
+              "parallel_tool_calls":true
+            }""",
+        )
+
+        assertTrue(request.hasTools)
+        assertEquals(MnnToolChoiceMode.REQUIRED, request.toolChoice.mode)
+        assertEquals(true, request.parallelToolCalls)
+        assertEquals(1, request.effectiveTools().size())
+
         val error = assertFailsWith<IllegalArgumentException> {
             MnnChatRequestParser.parse(
                 """{"messages":[{"role":"user","content":"hello"}],"tools":[]}""",
             )
         }
-        assertTrue(error.message.orEmpty().contains("tools is not supported"))
+        assertTrue(error.message.orEmpty().contains("1 to"))
+    }
+
+    @Test
+    fun parsesToolHistoryAndImageContent() {
+        val request = MnnChatRequestParser.parse(
+            """{
+              "messages":[
+                {"role":"assistant","content":null,"tool_calls":[{"id":"call-1","type":"function","function":{"name":"get_time","arguments":"{\"city\":\"Beijing\"}"}}]},
+                {"role":"tool","tool_call_id":"call-1","content":"12:00"},
+                {"role":"user","content":[{"type":"text","text":"What is this?"},{"type":"image_url","image_url":{"url":"data:image/jpeg;base64,AA==","detail":"high"}}]}
+              ]
+            }""",
+        )
+
+        assertEquals(3, request.messages.size)
+        assertTrue(request.messages[0].has("tool_calls"))
+        assertEquals("tool", request.messages[1].get("role").asString)
     }
 
     @Test

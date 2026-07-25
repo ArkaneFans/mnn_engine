@@ -36,16 +36,16 @@ class MnnEngine {
   Future<void> unloadModel() => MnnEnginePlatform.instance.unloadModel();
 
   Future<MnnPortCheckResult> checkPort({
-    String host = '127.0.0.1',
+    MnnServerBindMode bindMode = MnnServerBindMode.loopback,
     required int port,
-  }) => MnnEnginePlatform.instance.checkPort(host: host, port: port);
+  }) => MnnEnginePlatform.instance.checkPort(bindMode: bindMode, port: port);
 
   Future<MnnServerInfo> startServer({
-    String host = '127.0.0.1',
+    MnnServerBindMode bindMode = MnnServerBindMode.loopback,
     int port = 8081,
     String? apiKey,
   }) => MnnEnginePlatform.instance.startServer(
-    host: host,
+    bindMode: bindMode,
     port: port,
     apiKey: apiKey,
   );

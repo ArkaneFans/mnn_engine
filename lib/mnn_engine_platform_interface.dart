@@ -25,11 +25,11 @@ abstract class MnnEnginePlatform extends PlatformInterface {
   Future<MnnModelInfo> loadModel(String modelId);
   Future<void> unloadModel();
   Future<MnnPortCheckResult> checkPort({
-    required String host,
+    required MnnServerBindMode bindMode,
     required int port,
   });
   Future<MnnServerInfo> startServer({
-    required String host,
+    required MnnServerBindMode bindMode,
     required int port,
     String? apiKey,
   });

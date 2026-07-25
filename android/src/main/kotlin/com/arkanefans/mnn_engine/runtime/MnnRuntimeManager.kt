@@ -5,6 +5,7 @@ import com.arkanefans.mnn_engine.logging.MnnLogStore
 import com.arkanefans.mnn_engine.model.MnnModelInfo
 import com.arkanefans.mnn_engine.model.MnnTestDirectories
 import com.arkanefans.mnn_engine.model.MnnTestModelRepository
+import com.google.gson.JsonArray
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
@@ -92,7 +93,8 @@ class MnnRuntimeManager(
     }
 
     fun generate(
-        messages: List<Map<String, String>>,
+        messages: List<JsonObject>,
+        tools: JsonArray,
         temperature: Double?,
         topP: Double?,
         maxTokens: Int,
@@ -121,6 +123,9 @@ class MnnRuntimeManager(
             temperature?.let { config.addProperty("temperature", it) }
             topP?.let { config.addProperty("topP", it) }
             config.addProperty("max_new_tokens", maxTokens)
+            val jinja = config.getAsJsonObject("jinja") ?: JsonObject().also { config.add("jinja", it) }
+            val context = jinja.getAsJsonObject("context") ?: JsonObject().also { jinja.add("context", it) }
+            context.add("tools", tools.deepCopy())
             val metrics = session.generate(
                 Gson().toJson(messages),
                 config.toString(),

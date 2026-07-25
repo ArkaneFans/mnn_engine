@@ -10,6 +10,8 @@ data class MnnModelInfo(
     val sizeBytes: Long,
     val importedAt: Long,
     val isActive: Boolean,
+    val supportsVision: Boolean = false,
+    val supportsToolCalling: Boolean = false,
     val loadDurationMs: Long? = null,
     val validationWarnings: List<String> = emptyList(),
 ) {
@@ -23,6 +25,8 @@ data class MnnModelInfo(
         "sizeBytes" to sizeBytes,
         "importedAt" to importedAt,
         "isActive" to isActive,
+        "supportsVision" to supportsVision,
+        "supportsToolCalling" to supportsToolCalling,
         "loadDurationMs" to loadDurationMs,
         "validationWarnings" to validationWarnings,
     )

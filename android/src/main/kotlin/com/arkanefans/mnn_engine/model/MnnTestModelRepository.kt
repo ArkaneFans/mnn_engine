@@ -42,8 +42,10 @@ class MnnTestModelRepository(
         val modelKey = dir.name
         val modelId = metadata.string("modelId", "model_id")?.takeIf(String::isNotBlank)
             ?: "local/$modelKey"
-        val warnings = runCatching { validator.validate(dir).warnings }
-            .getOrElse { listOf(it.message ?: "Model validation failed.") }
+        val validationResult = runCatching { validator.validate(dir) }
+        val validation = validationResult.getOrNull()
+        val warnings = validation?.warnings
+            ?: listOf(validationResult.exceptionOrNull()?.message ?: "Model validation failed.")
         return MnnModelInfo(
             modelId = modelId,
             modelKey = modelKey,
@@ -55,6 +57,8 @@ class MnnTestModelRepository(
             sizeBytes = directorySize(dir),
             importedAt = dir.lastModified(),
             isActive = modelId == activeModelId,
+            supportsVision = validation?.supportsVision == true,
+            supportsToolCalling = validation?.supportsToolCalling == true,
             validationWarnings = warnings,
         )
     }

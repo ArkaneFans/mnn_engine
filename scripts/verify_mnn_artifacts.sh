@@ -95,12 +95,12 @@ if info["androidPlatform"] != "android-28":
     raise SystemExit(f"unexpected Android platform in build info: {info['androidPlatform']}")
 if info["cmakeVersion"] != "3.22.1":
     raise SystemExit(f"unexpected CMake version in build info: {info['cmakeVersion']}")
-if int(info["nativeAdapterAbiVersion"]) < 1:
-    raise SystemExit("nativeAdapterAbiVersion must be at least 1")
+if int(info["nativeAdapterAbiVersion"]) < 2:
+    raise SystemExit("nativeAdapterAbiVersion must be at least 2")
 flags = set(info["cmakeFlags"])
 for expected in (
     "MNN_BUILD_FOR_ANDROID_COMMAND=ON",
-    "MNN_BUILD_LLM_OMNI=OFF",
+    "MNN_BUILD_LLM_OMNI=ON",
     "MNN_KLEIDIAI=OFF",
     "ANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
 ):

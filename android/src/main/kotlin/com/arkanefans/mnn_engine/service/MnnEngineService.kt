@@ -18,6 +18,7 @@ import com.arkanefans.mnn_engine.runtime.MnnNativeBridge
 import com.arkanefans.mnn_engine.runtime.MnnRuntimeManager
 import com.arkanefans.mnn_engine.runtime.RuntimeSnapshot
 import com.arkanefans.mnn_engine.server.MnnOpenAiServer
+import com.arkanefans.mnn_engine.server.MnnBindMode
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.util.concurrent.CopyOnWriteArrayList
@@ -191,27 +192,35 @@ class MnnEngineService : Service() {
         runtimeManager.cancelGeneration()
     }
 
-    fun startServer(host: String, port: Int, apiKey: String?): Map<String, Any?> {
-        if (host != "127.0.0.1" && host != "localhost") {
-            throw MnnEngineOperationException("invalid_argument", "Phase 1 only supports the loopback host.")
+    fun startServer(bindMode: String, port: Int, apiKey: String?): Map<String, Any?> {
+        val mode = try {
+            MnnBindMode.parse(bindMode)
+        } catch (error: IllegalArgumentException) {
+            throw MnnEngineOperationException("invalid_argument", error.message ?: "Invalid bind mode.")
+        }
+        if (mode == MnnBindMode.ALL_INTERFACES && (apiKey?.length ?: 0) < MIN_LAN_API_KEY_LENGTH) {
+            throw MnnEngineOperationException(
+                "invalid_argument",
+                "allInterfaces mode requires an API key of at least $MIN_LAN_API_KEY_LENGTH characters.",
+            )
         }
         val model = runtimeManager.activeModel()
             ?: throw MnnEngineOperationException("model_not_loaded", "Load a model before starting the MNN Server.")
         openAiServer.info()?.let { existing ->
-            if (existing.host == host && existing.port == port) return existing.toMap()
+            if (existing.bindMode == mode.wireName && existing.port == port) return existing.toMap()
             throw MnnEngineOperationException("server_start_failed", "MNN Server is already running at ${existing.baseUrl}.")
         }
-        val portCheck = checkPort(host, port)
+        val portCheck = checkPort(mode.wireName, port)
         if (portCheck["available"] != true) {
             throw MnnEngineOperationException(
                 "port_in_use",
                 portCheck["message"]?.toString() ?: "Port is unavailable.",
-                mapOf("host" to host, "port" to port),
+                mapOf("bindMode" to mode.wireName, "port" to port),
             )
         }
         updateSnapshot(snapshot.copy(serverState = "starting", lastError = null))
-        val baseUrl = "http://$host:$port"
-        val testUrl = if (apiKey.isNullOrEmpty()) baseUrl else "$baseUrl?token=${Uri.encode(apiKey)}"
+        val baseUrl = "http://127.0.0.1:$port"
+        val testUrl = baseUrl
         val foregroundIntent = Intent(this, MnnEngineService::class.java).apply {
             action = ACTION_START_FOREGROUND
             putExtra(EXTRA_BASE_URL, baseUrl)
@@ -220,7 +229,7 @@ class MnnEngineService : Service() {
         }
         ContextCompat.startForegroundService(this, foregroundIntent)
         return try {
-            val info = openAiServer.start(host, port, apiKey)
+            val info = openAiServer.start(mode, port, apiKey)
             updateSnapshot(
                 snapshot.copy(
                     serverState = "running",
@@ -251,7 +260,10 @@ class MnnEngineService : Service() {
         updateSnapshot(snapshot.copy(serverState = "stopped", server = null, lastError = null))
     }
 
-    fun checkPort(host: String, port: Int): Map<String, Any?> {
+    fun checkPort(bindMode: String, port: Int): Map<String, Any?> {
+        val mode = runCatching { MnnBindMode.parse(bindMode) }.getOrElse { error ->
+            return mapOf("available" to false, "ownedByMnn" to false, "message" to error.message)
+        }
         if (port !in 1024..65535) {
             return mapOf(
                 "available" to false,
@@ -260,14 +272,14 @@ class MnnEngineService : Service() {
             )
         }
         openAiServer.info()?.let { info ->
-            if (info.host == host && info.port == port) {
+            if (info.bindMode == mode.wireName && info.port == port) {
                 return mapOf("available" to false, "ownedByMnn" to true, "message" to null)
             }
         }
         return try {
             ServerSocket().use { socket ->
                 socket.reuseAddress = false
-                socket.bind(InetSocketAddress(host, port))
+                socket.bind(InetSocketAddress(mode.host, port))
             }
             mapOf("available" to true, "ownedByMnn" to false, "message" to null)
         } catch (error: Exception) {
@@ -335,6 +347,7 @@ class MnnEngineService : Service() {
     private companion object {
         const val TAG = "MnnEngineService"
         const val STAGING_MAX_AGE_MS = 24L * 60L * 60L * 1000L
+        const val MIN_LAN_API_KEY_LENGTH = 16
         const val ACTION_START_FOREGROUND = "com.arkanefans.mnn_engine.START_FOREGROUND"
         const val EXTRA_BASE_URL = "base_url"
         const val EXTRA_TEST_URL = "test_url"

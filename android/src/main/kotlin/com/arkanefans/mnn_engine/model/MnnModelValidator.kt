@@ -8,6 +8,8 @@ class MnnModelValidator {
     data class ValidationResult(
         val config: JsonObject,
         val warnings: List<String>,
+        val supportsVision: Boolean,
+        val supportsToolCalling: Boolean,
     )
 
     fun validate(modelDir: File): ValidationResult {
@@ -25,16 +27,24 @@ class MnnModelValidator {
         val llmModel = root.stringValue("llm_model")
         require(!llmModel.isNullOrBlank()) { "config.json must define llm_model." }
 
+        val llmConfigPath = root.stringValue("llm_config") ?: DEFAULT_LLM_CONFIG_FILE
+        val llmConfigFile = File(modelDir, llmConfigPath)
+        val llmConfig = if (llmConfigFile.isFile) {
+            runCatching { JsonParser.parseString(llmConfigFile.readText(Charsets.UTF_8)).asJsonObject }
+                .getOrElse { error ->
+                    throw IllegalArgumentException("$llmConfigPath is invalid: ${error.message}", error)
+                }
+        } else {
+            JsonObject()
+        }
+
         val warnings = mutableListOf<String>()
         val backend = root.stringValue("backend_type")
         if (!backend.isNullOrBlank() && backend.lowercase() != "cpu") {
-            warnings += "backend_type '$backend' will be overridden to cpu in phase 1."
-        }
-        if (!root.stringValue("visual_model").isNullOrBlank()) {
-            warnings += "visual_model is present but multimodal inference is not supported in phase 1."
+            warnings += "backend_type '$backend' will be overridden to cpu."
         }
         if (!root.stringValue("audio_model").isNullOrBlank()) {
-            warnings += "audio_model is present but audio inference is not supported in phase 1."
+            warnings += "audio_model is present but the API does not expose audio input."
         }
 
         REFERENCED_FILE_KEYS.forEach { key ->
@@ -42,7 +52,24 @@ class MnnModelValidator {
                 validateReferencedFile(modelDir, key, relativePath)
             }
         }
-        return ValidationResult(root, warnings)
+        val supportsVision = root.booleanValue("is_visual") == true ||
+            llmConfig.booleanValue("is_visual") == true ||
+            !root.stringValue("visual_model").isNullOrBlank()
+        if (supportsVision) {
+            val visualModel = root.stringValue("visual_model") ?: DEFAULT_VISUAL_MODEL_FILE
+            validateReferencedFile(
+                modelDir,
+                "visual_model",
+                visualModel,
+            )
+            val visualWeight = root.stringValue("visual_weight")
+                ?: "$visualModel.weight"
+            validateReferencedFile(modelDir, "visual_weight", visualWeight)
+        }
+        val chatTemplate = root.chatTemplate() ?: llmConfig.chatTemplate().orEmpty()
+        val supportsToolCalling = chatTemplate.contains("tools") &&
+            chatTemplate.contains("tool_call") && chatTemplate.contains("tool_response")
+        return ValidationResult(root, warnings, supportsVision, supportsToolCalling)
     }
 
     private fun validateReferencedFile(modelDir: File, key: String, configuredPath: String) {
@@ -64,15 +91,27 @@ class MnnModelValidator {
         }
     }
 
+    private fun JsonObject.booleanValue(key: String): Boolean? {
+        val element = get(key) ?: return null
+        return if (element.isJsonPrimitive && element.asJsonPrimitive.isBoolean) element.asBoolean else null
+    }
+
+    private fun JsonObject.chatTemplate(): String? =
+        getAsJsonObject("jinja")?.stringValue("chat_template")
+
     companion object {
         const val CONFIG_FILE = "config.json"
+        private const val DEFAULT_LLM_CONFIG_FILE = "llm_config.json"
+        private const val DEFAULT_VISUAL_MODEL_FILE = "visual.mnn"
         private val REFERENCED_FILE_KEYS = listOf(
             "llm_model",
             "llm_weight",
             "embedding_model",
             "embedding_file",
             "tokenizer_file",
+            "llm_config",
             "visual_model",
+            "visual_weight",
             "audio_model",
         )
     }

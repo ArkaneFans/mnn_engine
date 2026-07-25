@@ -42,4 +42,45 @@ class MnnModelValidatorTest {
             parent.deleteRecursively()
         }
     }
+
+    @Test
+    fun detectsVisualAndToolCapabilitiesAndRequiresVisualWeight() {
+        val root = createTempDirectory("mnn-visual-model").toFile()
+        try {
+            File(root, "llm.mnn").writeBytes(byteArrayOf(1))
+            File(root, "llm.mnn.weight").writeBytes(byteArrayOf(2))
+            File(root, "visual.mnn").writeBytes(byteArrayOf(3))
+            File(root, "visual.mnn.weight").writeBytes(byteArrayOf(4))
+            File(root, "config.json").writeText(
+                """{"llm_model":"llm.mnn","llm_weight":"llm.mnn.weight","is_visual":true}""",
+            )
+            File(root, "llm_config.json").writeText(
+                """{"jinja":{"chat_template":"tools <tool_call> <tool_response>"}}""",
+            )
+
+            val result = validator.validate(root)
+
+            assertEquals(true, result.supportsVision)
+            assertEquals(true, result.supportsToolCalling)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun rejectsVisualModelWithoutWeight() {
+        val root = createTempDirectory("mnn-missing-visual-weight").toFile()
+        try {
+            File(root, "llm.mnn").writeBytes(byteArrayOf(1))
+            File(root, "llm.mnn.weight").writeBytes(byteArrayOf(2))
+            File(root, "visual.mnn").writeBytes(byteArrayOf(3))
+            File(root, "config.json").writeText(
+                """{"llm_model":"llm.mnn","llm_weight":"llm.mnn.weight","is_visual":true}""",
+            )
+
+            assertFailsWith<IllegalArgumentException> { validator.validate(root) }
+        } finally {
+            root.deleteRecursively()
+        }
+    }
 }

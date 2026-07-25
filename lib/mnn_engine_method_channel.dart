@@ -76,20 +76,23 @@ class MethodChannelMnnEngine extends MnnEnginePlatform {
 
   @override
   Future<MnnPortCheckResult> checkPort({
-    required String host,
+    required MnnServerBindMode bindMode,
     required int port,
   }) async => MnnPortCheckResult.fromMap(
-    await _invoke<Object?>('checkPort', {'host': host, 'port': port}),
+    await _invoke<Object?>('checkPort', {
+      'bindMode': bindMode.name,
+      'port': port,
+    }),
   );
 
   @override
   Future<MnnServerInfo> startServer({
-    required String host,
+    required MnnServerBindMode bindMode,
     required int port,
     String? apiKey,
   }) async => MnnServerInfo.fromMap(
     await _invoke<Object?>('startServer', {
-      'host': host,
+      'bindMode': bindMode.name,
       'port': port,
       'apiKey': apiKey,
     }),

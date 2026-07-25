@@ -1,5 +1,7 @@
 typedef JsonMap = Map<String, Object?>;
 
+enum MnnServerBindMode { loopback, allInterfaces }
+
 Map<String, Object?> _map(Object? value) {
   return Map<String, Object?>.from(value! as Map);
 }
@@ -50,6 +52,8 @@ class MnnModelInfo {
     required this.sizeBytes,
     required this.importedAt,
     required this.isActive,
+    this.supportsVision = false,
+    this.supportsToolCalling = false,
     this.loadDurationMs,
     this.vendor,
     this.validationWarnings = const [],
@@ -67,6 +71,8 @@ class MnnModelInfo {
       sizeBytes: (map['sizeBytes'] as num?)?.toInt() ?? 0,
       importedAt: (map['importedAt'] as num?)?.toInt() ?? 0,
       isActive: map['isActive'] as bool? ?? false,
+      supportsVision: map['supportsVision'] as bool? ?? false,
+      supportsToolCalling: map['supportsToolCalling'] as bool? ?? false,
       loadDurationMs: (map['loadDurationMs'] as num?)?.toInt(),
       validationWarnings:
           (map['validationWarnings'] as List?)?.whereType<String>().toList(
@@ -85,6 +91,8 @@ class MnnModelInfo {
   final int sizeBytes;
   final int importedAt;
   final bool isActive;
+  final bool supportsVision;
+  final bool supportsToolCalling;
   final int? loadDurationMs;
   final List<String> validationWarnings;
 }
@@ -93,8 +101,13 @@ class MnnServerInfo {
   const MnnServerInfo({
     required this.running,
     required this.host,
+    required this.bindMode,
+    required this.bindAddress,
     required this.port,
     required this.baseUrl,
+    required this.localBaseUrl,
+    this.advertisedUrls = const [],
+    this.requiresApiKey = false,
     this.startedAt,
     this.startDurationMs,
   });
@@ -104,8 +117,20 @@ class MnnServerInfo {
     return MnnServerInfo(
       running: map['running'] as bool? ?? false,
       host: map['host'] as String? ?? '127.0.0.1',
+      bindMode: MnnServerBindMode.values.byName(
+        map['bindMode'] as String? ?? 'loopback',
+      ),
+      bindAddress: map['bindAddress'] as String? ?? '127.0.0.1',
       port: (map['port'] as num?)?.toInt() ?? 0,
       baseUrl: map['baseUrl'] as String? ?? '',
+      localBaseUrl:
+          map['localBaseUrl'] as String? ?? map['baseUrl'] as String? ?? '',
+      advertisedUrls:
+          (map['advertisedUrls'] as List?)?.whereType<String>().toList(
+            growable: false,
+          ) ??
+          const [],
+      requiresApiKey: map['requiresApiKey'] as bool? ?? false,
       startedAt: (map['startedAt'] as num?)?.toInt(),
       startDurationMs: (map['startDurationMs'] as num?)?.toInt(),
     );
@@ -113,8 +138,13 @@ class MnnServerInfo {
 
   final bool running;
   final String host;
+  final MnnServerBindMode bindMode;
+  final String bindAddress;
   final int port;
   final String baseUrl;
+  final String localBaseUrl;
+  final List<String> advertisedUrls;
+  final bool requiresApiKey;
   final int? startedAt;
   final int? startDurationMs;
 }

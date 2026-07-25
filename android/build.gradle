@@ -34,6 +34,7 @@ def verifierShell = file("${pluginRoot}/scripts/verify_mnn_artifacts.sh")
 
 tasks.register("prepareMnnNativeArm64") {
     outputs.files(generatedMnnLibrary, generatedJniLibrary, generatedBuildInfo)
+    outputs.upToDateWhen { false }
     doLast {
         if (generatedMnnLibrary.isFile() && generatedJniLibrary.isFile() && generatedBuildInfo.isFile()) {
             return

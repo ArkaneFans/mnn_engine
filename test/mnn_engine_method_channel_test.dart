@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mnn_engine/mnn_engine.dart' show MnnEngineException;
+import 'package:mnn_engine/mnn_engine.dart'
+    show MnnEngineException, MnnServerBindMode;
 import 'package:mnn_engine/mnn_engine_method_channel.dart';
 
 void main() {
@@ -42,13 +43,16 @@ void main() {
         .setMockMethodCallHandler(channel, (call) async {
           expect(call.method, 'checkPort');
           expect(call.arguments, <String, Object?>{
-            'host': '127.0.0.1',
+            'bindMode': 'loopback',
             'port': 8081,
           });
           return <String, Object?>{'available': true, 'ownedByMnn': false};
         });
 
-    final result = await platform.checkPort(host: '127.0.0.1', port: 8081);
+    final result = await platform.checkPort(
+      bindMode: MnnServerBindMode.loopback,
+      port: 8081,
+    );
 
     expect(result.available, isTrue);
     expect(result.ownedByMnn, isFalse);
@@ -88,7 +92,7 @@ void main() {
         });
 
     await expectLater(
-      platform.startServer(host: '127.0.0.1', port: 8081),
+      platform.startServer(bindMode: MnnServerBindMode.loopback, port: 8081),
       throwsA(
         isA<MnnEngineException>()
             .having((error) => error.code, 'code', 'port_in_use')
