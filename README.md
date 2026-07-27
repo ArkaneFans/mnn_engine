@@ -3,7 +3,7 @@
 > [!WARNING]
 > **本项目正在开发中。** 当前版本用于验证 Flutter Android 应用中的 MNN 本地文本模型推理与 API Server 能力，公开 API、构建流程和模型兼容范围仍可能变化。现阶段不建议用于生产环境。
 
-`mnn_engine` 是一个 Android-only Flutter 插件，用于集成 [Alibaba MNN](https://github.com/alibaba/MNN) 本地推理引擎，并在 Android 设备上提供 OpenAI 兼容的 loopback HTTP API Server。
+`mnn_engine` 是一个 Android-only Flutter 插件，用于集成 [Alibaba MNN](https://github.com/alibaba/MNN) 本地推理引擎，并在 Android 设备上提供 OpenAI 兼容的 HTTP API Server。
 
 本仓库不是 Alibaba 官方 Flutter 插件。MNN 源码通过 Git 子模块引用，并保持在经过验证的固定提交上。
 
@@ -23,8 +23,8 @@
 - 加载、卸载和删除导入的本地文本模型。
 - 使用 Android 前台 Service 管理模型 Session 和 API Server 生命周期。
 - 提供运行状态快照、状态事件流、日志快照和实时日志流。
-- 启动仅监听设备 loopback 的 Ktor Netty Server。
-- 支持可选 Bearer API Key。
+- 启动监听设备 loopback 或所有 IPv4 网络接口的 Ktor Netty Server。
+- 两种监听模式均支持可选 Bearer API Key；留空时不启用鉴权。
 - 支持 OpenAI 兼容的流式和非流式 Chat Completions。
 - 支持取消当前生成请求。
 - 校验 Native ELF ABI、16 KB page alignment、JNI exports、依赖关系和 APK 打包结果。
@@ -43,7 +43,7 @@
 | 模型类型 | 文本 LLM |
 | 活跃模型 | 同一时间一个 |
 | 生成请求 | 同一时间一个 |
-| Server 地址 | `127.0.0.1` 或 `localhost` |
+| Server 地址 | `127.0.0.1`，或通过 `allInterfaces` 绑定 `0.0.0.0` |
 | OpenAI API | `/v1/models`、`/v1/chat/completions` |
 
 当前不支持：
@@ -360,6 +360,8 @@ Server 默认地址：
 http://127.0.0.1:8081
 ```
 
+`startServer` 的 `bindMode` 可选择 `loopback` 或 `allInterfaces`。两种模式下 `apiKey` 都是可选参数：设置后启用 Bearer 鉴权，留空时所有能够访问监听地址和端口的客户端都可以直接调用 API。使用 `allInterfaces` 且不配置 Key 时，请确保设备处于可信网络。
+
 可用端点：
 
 | Method | Path | 说明 |
@@ -390,11 +392,13 @@ Chat Completions 当前接受：
 
 ### 从开发机访问真机 Server
 
-Server 只监听 Android 设备 loopback。开发机调试时使用 ADB 端口转发：
+使用默认 loopback 模式时，开发机通过 ADB 端口转发访问：
 
 ```powershell
 adb forward tcp:18081 tcp:8081
 ```
+
+使用 `allInterfaces` 模式时，也可以直接通过 Android 设备的局域网 IPv4 地址访问，例如 `http://192.168.1.20:8081`。此模式会暴露到 Wi-Fi、热点、VPN 等可用 IPv4 接口；未配置 API Key 时不会进行鉴权。
 
 查询模型：
 
