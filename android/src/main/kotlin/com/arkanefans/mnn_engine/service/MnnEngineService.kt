@@ -198,12 +198,6 @@ class MnnEngineService : Service() {
         } catch (error: IllegalArgumentException) {
             throw MnnEngineOperationException("invalid_argument", error.message ?: "Invalid bind mode.")
         }
-        if (mode == MnnBindMode.ALL_INTERFACES && (apiKey?.length ?: 0) < MIN_LAN_API_KEY_LENGTH) {
-            throw MnnEngineOperationException(
-                "invalid_argument",
-                "allInterfaces mode requires an API key of at least $MIN_LAN_API_KEY_LENGTH characters.",
-            )
-        }
         val model = runtimeManager.activeModel()
             ?: throw MnnEngineOperationException("model_not_loaded", "Load a model before starting the MNN Server.")
         openAiServer.info()?.let { existing ->
@@ -347,7 +341,6 @@ class MnnEngineService : Service() {
     private companion object {
         const val TAG = "MnnEngineService"
         const val STAGING_MAX_AGE_MS = 24L * 60L * 60L * 1000L
-        const val MIN_LAN_API_KEY_LENGTH = 16
         const val ACTION_START_FOREGROUND = "com.arkanefans.mnn_engine.START_FOREGROUND"
         const val EXTRA_BASE_URL = "base_url"
         const val EXTRA_TEST_URL = "test_url"

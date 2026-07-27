@@ -58,6 +58,38 @@ void main() {
     expect(result.ownedByMnn, isFalse);
   });
 
+  test('allows allInterfaces start without an API key', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          expect(call.method, 'startServer');
+          expect(call.arguments, <String, Object?>{
+            'bindMode': 'allInterfaces',
+            'port': 8081,
+            'apiKey': null,
+          });
+          return <String, Object?>{
+            'running': true,
+            'host': '0.0.0.0',
+            'bindMode': 'allInterfaces',
+            'bindAddress': '0.0.0.0',
+            'port': 8081,
+            'baseUrl': 'http://127.0.0.1:8081',
+            'localBaseUrl': 'http://127.0.0.1:8081',
+            'advertisedUrls': <String>['http://192.168.1.2:8081'],
+            'requiresApiKey': false,
+          };
+        });
+
+    final server = await platform.startServer(
+      bindMode: MnnServerBindMode.allInterfaces,
+      port: 8081,
+    );
+
+    expect(server.bindMode, MnnServerBindMode.allInterfaces);
+    expect(server.bindAddress, '0.0.0.0');
+    expect(server.requiresApiKey, isFalse);
+  });
+
   test('loadModel decodes native load duration', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {

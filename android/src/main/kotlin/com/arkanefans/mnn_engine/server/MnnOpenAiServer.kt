@@ -51,11 +51,6 @@ class MnnOpenAiServer(
 
     fun start(mode: MnnBindMode, port: Int, configuredApiKey: String?): MnnServerInfo {
         check(engine == null) { "MNN API Server is already running." }
-        if (mode == MnnBindMode.ALL_INTERFACES) {
-            require((configuredApiKey?.length ?: 0) >= MIN_LAN_API_KEY_LENGTH) {
-                "An API key of at least $MIN_LAN_API_KEY_LENGTH characters is required for allInterfaces mode."
-            }
-        }
         mediaStager.cleanupStale()
         val startedAt = System.currentTimeMillis() / 1000
         val startMonotonic = SystemClock.elapsedRealtime()
@@ -350,6 +345,5 @@ class MnnOpenAiServer(
     private companion object {
         const val TAG = "server"
         const val TEST_PAGE_ASSET = "mnn_test_page.html"
-        const val MIN_LAN_API_KEY_LENGTH = 16
     }
 }
