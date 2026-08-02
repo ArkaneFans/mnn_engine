@@ -220,7 +220,7 @@ class MnnOpenAiServer(
     ) {
         val output = StringBuilder()
         val metrics = generate(request, messages) { token -> output.append(token); false }
-        val parsed = if (request.hasTools) parseTools(request, output.toString()) else MnnParsedCompletion(output.toString().ifBlank { null }, emptyList())
+        val parsed = parseCompletion(request, model, output.toString())
         val finish = if (parsed.toolCalls.isNotEmpty()) "tool_calls" else normalizeFinishReason(metrics.finishReason)
         respondJson(HttpStatusCode.OK, JsonObject().apply {
             addProperty("id", "chatcmpl-${UUID.randomUUID()}")
@@ -252,12 +252,33 @@ class MnnOpenAiServer(
             fun send(data: String): Boolean = try {
                 write("data: $data\n\n"); flush(); false
             } catch (_: IOException) { disconnected = true; true }
+            fun sendDelta(delta: MnnReasoningDelta): Boolean {
+                if (delta.isEmpty) return false
+                return send(chunk(
+                    completionId,
+                    created,
+                    model.modelId,
+                    content = delta.content.ifEmpty { null },
+                    reasoningContent = delta.reasoningContent.ifEmpty { null },
+                ).toString())
+            }
             send(chunk(completionId, created, model.modelId, role = "assistant").toString())
             val output = StringBuilder()
+            val reasoningParser = if (request.hasTools) {
+                null
+            } else {
+                MnnReasoningOutputParser(MnnReasoningProfileDetector.detect(model))
+            }
             val metrics = try {
                 generate(request, messages) { token ->
-                    if (request.hasTools) { output.append(token); false }
-                    else { output.append(token); disconnected || send(chunk(completionId, created, model.modelId, content = token).toString()) }
+                    output.append(token)
+                    if (request.hasTools) {
+                        false
+                    } else {
+                        disconnected || reasoningParser!!.accept(token).any { delta ->
+                            sendDelta(delta)
+                        }
+                    }
                 }
             } catch (error: Throwable) {
                 logStore.error(TAG, "Stream generation failed", error)
@@ -271,10 +292,45 @@ class MnnOpenAiServer(
                 return@respondTextWriter
             }
             if (!disconnected) {
-                val parsed = if (request.hasTools) parseTools(request, output.toString()) else null
-                if (parsed?.content != null) send(chunk(completionId, created, model.modelId, content = parsed.content).toString())
-                if (parsed != null && parsed.toolCalls.isNotEmpty()) send(toolCallsChunk(completionId, created, model.modelId, parsed.toolCalls).toString())
-                send(chunk(completionId, created, model.modelId, finishReason = if (parsed?.toolCalls?.isNotEmpty() == true) "tool_calls" else normalizeFinishReason(metrics.finishReason)).toString())
+                for (delta in reasoningParser?.finish().orEmpty()) {
+                    if (sendDelta(delta)) break
+                }
+            }
+            if (!disconnected) {
+                val parsed = if (request.hasTools) {
+                    parseCompletion(request, model, output.toString())
+                } else {
+                    null
+                }
+                parsed?.reasoningContent?.let {
+                    send(chunk(
+                        completionId,
+                        created,
+                        model.modelId,
+                        reasoningContent = it,
+                    ).toString())
+                }
+                parsed?.content?.let {
+                    send(chunk(completionId, created, model.modelId, content = it).toString())
+                }
+                if (parsed != null && parsed.toolCalls.isNotEmpty()) {
+                    send(toolCallsChunk(
+                        completionId,
+                        created,
+                        model.modelId,
+                        parsed.toolCalls,
+                    ).toString())
+                }
+                send(chunk(
+                    completionId,
+                    created,
+                    model.modelId,
+                    finishReason = if (parsed?.toolCalls?.isNotEmpty() == true) {
+                        "tool_calls"
+                    } else {
+                        normalizeFinishReason(metrics.finishReason)
+                    },
+                ).toString())
                 send("[DONE]")
             }
         }
@@ -292,9 +348,27 @@ class MnnOpenAiServer(
         }
     }
 
+    private fun parseCompletion(
+        request: MnnChatRequest,
+        model: MnnModelInfo,
+        output: String,
+    ): MnnParsedCompletion {
+        val reasoning = MnnReasoningOutputParser.parse(
+            output,
+            MnnReasoningProfileDetector.detect(model),
+        )
+        val parsed = if (request.hasTools) {
+            parseTools(request, reasoning.content.orEmpty())
+        } else {
+            MnnParsedCompletion(reasoning.content, emptyList())
+        }
+        return parsed.copy(reasoningContent = reasoning.reasoningContent)
+    }
+
     private fun assistantMessage(parsed: MnnParsedCompletion) = JsonObject().apply {
         addProperty("role", "assistant")
         if (parsed.content == null) add("content", com.google.gson.JsonNull.INSTANCE) else addProperty("content", parsed.content)
+        parsed.reasoningContent?.let { addProperty("reasoning_content", it) }
         if (parsed.toolCalls.isNotEmpty()) add("tool_calls", toolCalls(parsed.toolCalls))
     }
 
@@ -309,10 +383,22 @@ class MnnOpenAiServer(
         getAsJsonArray("choices").get(0).asJsonObject.getAsJsonObject("delta").add("tool_calls", toolCalls(calls).also { calls.forEachIndexed { index, call -> it.get(index).asJsonObject.addProperty("index", index) } })
     }
 
-    private fun chunk(id: String, created: Long, model: String, role: String? = null, content: String? = null, finishReason: String? = null) = JsonObject().apply {
+    private fun chunk(
+        id: String,
+        created: Long,
+        model: String,
+        role: String? = null,
+        content: String? = null,
+        reasoningContent: String? = null,
+        finishReason: String? = null,
+    ) = JsonObject().apply {
         addProperty("id", id); addProperty("object", "chat.completion.chunk"); addProperty("created", created); addProperty("model", model)
         add("choices", JsonArray().apply { add(JsonObject().apply {
-            addProperty("index", 0); add("delta", JsonObject().apply { role?.let { addProperty("role", it) }; content?.let { addProperty("content", it) } })
+            addProperty("index", 0); add("delta", JsonObject().apply {
+                role?.let { addProperty("role", it) }
+                content?.let { addProperty("content", it) }
+                reasoningContent?.let { addProperty("reasoning_content", it) }
+            })
             if (finishReason == null) add("finish_reason", null) else addProperty("finish_reason", finishReason)
         }) })
     }

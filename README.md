@@ -27,6 +27,7 @@
 - 启动监听设备 loopback 或所有 IPv4 网络接口的 Ktor Netty Server。
 - 两种监听模式均支持可选 Bearer API Key；留空时不启用鉴权。
 - 支持 OpenAI 兼容的流式和非流式 Chat Completions、图片输入与 function tool calling。
+- 对使用 `<think>` 控制块的推理模型，将思考过程规范化为 `reasoning_content`，正文继续使用 `content`。
 - 支持取消当前生成请求。
 - 校验 Native ELF ABI、16 KB page alignment、JNI exports、依赖关系和 APK 打包结果。
 
@@ -399,6 +400,8 @@ Chat Completions 当前接受：
 - `tools`、`tool_choice`、`parallel_tool_calls`：支持 function tools；当前单次只生成一组调用。
 
 请求体最大为 2 MiB。`response_format`、`logprobs` 和 `top_logprobs` 当前不受支持。
+
+对于聊天模板声明了 `<think>` 控制块的模型，Server 会移除原始控制标签，并在流式响应的 `delta.reasoning_content` 或非流式响应的 `message.reasoning_content` 中返回思考内容。模板已经在 generation prompt 中写入 `<think>`、模型只生成 `</think>` 的情况也会按同一协议处理；普通模型的 `content` 行为不变。
 
 ### 从开发机访问真机 Server
 

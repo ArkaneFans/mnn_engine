@@ -13,6 +13,7 @@ internal data class MnnToolCall(
 internal data class MnnParsedCompletion(
     val content: String?,
     val toolCalls: List<MnnToolCall>,
+    val reasoningContent: String? = null,
     val diagnostic: String? = null,
 )
 
