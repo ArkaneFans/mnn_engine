@@ -113,6 +113,35 @@ void main() {
     expect(model.loadDurationMs, 1234);
   });
 
+  test('importModelFromPath forwards the private directory', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          expect(call.method, 'importModelFromPath');
+          expect(call.arguments, <String, Object?>{
+            'directoryPath': '/data/user/0/app/files/downloads/model',
+            'replaceExisting': false,
+          });
+          return <String, Object?>{
+            'modelId': 'local/qwen',
+            'modelKey': 'qwen',
+            'displayName': 'Qwen',
+            'modelDirPath': '/data/user/0/app/files/mnn/models/qwen',
+            'configPath': '/data/user/0/app/files/mnn/models/qwen/config.json',
+            'sizeBytes': 100,
+            'importedAt': 1,
+            'isActive': false,
+          };
+        });
+
+    final model = await platform.importModelFromPath(
+      '/data/user/0/app/files/downloads/model',
+      replaceExisting: false,
+    );
+
+    expect(model.modelId, 'local/qwen');
+    expect(model.modelDirPath, contains('/mnn/models/qwen'));
+  });
+
   test('preserves stable native error codes and details', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {

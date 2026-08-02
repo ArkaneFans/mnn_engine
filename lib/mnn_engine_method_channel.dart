@@ -63,6 +63,17 @@ class MethodChannelMnnEngine extends MnnEnginePlatform {
   );
 
   @override
+  Future<MnnModelInfo> importModelFromPath(
+    String directoryPath, {
+    required bool replaceExisting,
+  }) async => MnnModelInfo.fromMap(
+    await _invoke<Object?>('importModelFromPath', {
+      'directoryPath': directoryPath,
+      'replaceExisting': replaceExisting,
+    }),
+  );
+
+  @override
   Future<void> deleteImportedModel(String modelId) =>
       _invokeVoid('deleteImportedModel', {'modelId': modelId});
 

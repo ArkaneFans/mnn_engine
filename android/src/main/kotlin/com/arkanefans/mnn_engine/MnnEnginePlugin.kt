@@ -106,6 +106,16 @@ class MnnEnginePlugin :
                     result,
                     call.argument<Boolean>("replaceExisting") ?: true,
                 )
+                "importModelFromPath" -> {
+                    val directoryPath = call.argument<String>("directoryPath")
+                        ?: throw IllegalArgumentException("directoryPath is required.")
+                    executeIo(result) {
+                        currentService.importModelFromPath(
+                            directoryPath,
+                            call.argument<Boolean>("replaceExisting") ?: true,
+                        )
+                    }
+                }
                 "deleteImportedModel" -> {
                     val modelId = call.argument<String>("modelId")
                         ?: throw IllegalArgumentException("modelId is required.")

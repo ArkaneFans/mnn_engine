@@ -27,6 +27,16 @@ class MnnEngine {
         replaceExisting: replaceExisting,
       );
 
+  /// Imports a model directory the app already owns (e.g. a finished
+  /// download in private storage) without going through the SAF picker.
+  Future<MnnModelInfo> importModelFromPath(
+    String directoryPath, {
+    bool replaceExisting = true,
+  }) => MnnEnginePlatform.instance.importModelFromPath(
+    directoryPath,
+    replaceExisting: replaceExisting,
+  );
+
   Future<void> deleteImportedModel(String modelId) =>
       MnnEnginePlatform.instance.deleteImportedModel(modelId);
 

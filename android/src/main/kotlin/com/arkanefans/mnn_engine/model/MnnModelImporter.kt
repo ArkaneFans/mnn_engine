@@ -28,26 +28,7 @@ class MnnModelImporter(
         logStore.info(TAG, "Importing ${source.name ?: treeUri} into ${staging.absolutePath}")
         try {
             copyDirectoryContents(source, staging)
-            validator.validate(staging)
-            val modelKey = resolveModelKey(staging, source.name)
-            val finalDir = directories.modelDir(modelKey)
-            val existing = repository.modelInfo(finalDir, activeModelId)
-            if (existing != null) {
-                require(replaceExisting) { "Model already exists: ${existing.modelId}" }
-                require(existing.modelId != activeModelId) { "The active model cannot be replaced." }
-                check(finalDir.deleteRecursively()) { "Failed to replace existing model." }
-            }
-            if (!staging.renameTo(finalDir)) {
-                check(staging.copyRecursively(finalDir, overwrite = true)) {
-                    "Failed to commit imported model."
-                }
-                check(staging.deleteRecursively()) { "Failed to clean import staging directory." }
-            }
-            finalDir.setLastModified(System.currentTimeMillis())
-            val result = repository.modelInfo(finalDir, activeModelId)
-                ?: throw IllegalStateException("Imported model could not be scanned.")
-            logStore.info(TAG, "Imported ${result.modelId} (${result.sizeBytes} bytes)")
-            return result
+            return commit(staging, source.name, replaceExisting, activeModelId)
         } catch (error: Throwable) {
             staging.deleteRecursively()
             logStore.error(TAG, "Model import failed", error)
@@ -73,6 +54,69 @@ class MnnModelImporter(
                 }
             }
         }
+    }
+
+    /// Imports a directory the app already owns (a completed download in the
+    /// app's private storage), bypassing the SAF picker. Shares the staging,
+    /// validation and commit path with [import] so both entry points produce
+    /// identical on-disk layouts.
+    fun importFromPath(sourceDir: File, replaceExisting: Boolean, activeModelId: String?): MnnModelInfo {
+        directories.ensureCreated()
+        require(sourceDir.isDirectory && sourceDir.canRead()) { "Source directory is not readable." }
+
+        val staging = File(directories.stagingDir, UUID.randomUUID().toString())
+        check(staging.mkdirs()) { "Failed to create import staging directory." }
+        logStore.info(TAG, "Importing ${sourceDir.absolutePath} into ${staging.absolutePath}")
+        try {
+            copyLocalDirectoryContents(sourceDir, staging)
+            return commit(staging, sourceDir.name, replaceExisting, activeModelId)
+        } catch (error: Throwable) {
+            staging.deleteRecursively()
+            logStore.error(TAG, "Model import failed", error)
+            throw error
+        }
+    }
+
+    private fun copyLocalDirectoryContents(source: File, target: File) {
+        source.listFiles()?.forEach { child ->
+            val name = child.name
+            require(isSafeName(name)) { "Unsafe file name: $name" }
+            val output = File(target, name)
+            if (child.isDirectory) {
+                check(output.mkdir()) { "Failed to create directory: $name" }
+                copyLocalDirectoryContents(child, output)
+            } else if (child.isFile) {
+                child.copyTo(output, overwrite = true)
+            }
+        }
+    }
+
+    private fun commit(
+        staging: File,
+        sourceName: String?,
+        replaceExisting: Boolean,
+        activeModelId: String?,
+    ): MnnModelInfo {
+        validator.validate(staging)
+        val modelKey = resolveModelKey(staging, sourceName)
+        val finalDir = directories.modelDir(modelKey)
+        val existing = repository.modelInfo(finalDir, activeModelId)
+        if (existing != null) {
+            require(replaceExisting) { "Model already exists: ${existing.modelId}" }
+            require(existing.modelId != activeModelId) { "The active model cannot be replaced." }
+            check(finalDir.deleteRecursively()) { "Failed to replace existing model." }
+        }
+        if (!staging.renameTo(finalDir)) {
+            check(staging.copyRecursively(finalDir, overwrite = true)) {
+                "Failed to commit imported model."
+            }
+            check(staging.deleteRecursively()) { "Failed to clean import staging directory." }
+        }
+        finalDir.setLastModified(System.currentTimeMillis())
+        val result = repository.modelInfo(finalDir, activeModelId)
+            ?: throw IllegalStateException("Imported model could not be scanned.")
+        logStore.info(TAG, "Imported ${result.modelId} (${result.sizeBytes} bytes)")
+        return result
     }
 
     private fun resolveModelKey(staging: File, sourceName: String?): String {

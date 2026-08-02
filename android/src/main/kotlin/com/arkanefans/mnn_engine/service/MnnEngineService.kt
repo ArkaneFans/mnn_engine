@@ -155,6 +155,23 @@ class MnnEngineService : Service() {
         }
     }
 
+    fun importModelFromPath(directoryPath: String, replaceExisting: Boolean): Map<String, Any?> {
+        requireServerStopped("import a model")
+        val activeModelId = snapshot.activeModel?.get("modelId") as String?
+        return try {
+            importer.importFromPath(java.io.File(directoryPath), replaceExisting, activeModelId).toMap()
+        } catch (error: MnnEngineOperationException) {
+            throw error
+        } catch (error: IllegalArgumentException) {
+            val code = if (error.message.orEmpty().contains("config.json")) {
+                "model_config_not_found"
+            } else {
+                "model_path_not_readable"
+            }
+            throw MnnEngineOperationException(code, error.message ?: "Model import failed.", cause = error)
+        }
+    }
+
     fun deleteImportedModel(modelId: String) {
         requireServerStopped("delete a model")
         val activeModelId = snapshot.activeModel?.get("modelId") as String?
