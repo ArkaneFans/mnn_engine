@@ -19,13 +19,14 @@
 ## 核心功能
 
 - 通过 Android Storage Access Framework（SAF）选择并导入完整 MNN 模型目录。
+- 支持宿主应用通过 `importModelFromPath()` 导入已下载到私有存储的模型目录，无需再次打开 SAF。
 - 校验模型 `config.json` 及其引用的模型、权重、embedding 和 tokenizer 文件。
 - 加载、卸载和删除导入的本地文本模型。
 - 使用 Android 前台 Service 管理模型 Session 和 API Server 生命周期。
 - 提供运行状态快照、状态事件流、日志快照和实时日志流。
 - 启动监听设备 loopback 或所有 IPv4 网络接口的 Ktor Netty Server。
 - 两种监听模式均支持可选 Bearer API Key；留空时不启用鉴权。
-- 支持 OpenAI 兼容的流式和非流式 Chat Completions。
+- 支持 OpenAI 兼容的流式和非流式 Chat Completions、图片输入与 function tool calling。
 - 支持取消当前生成请求。
 - 校验 Native ELF ABI、16 KB page alignment、JNI exports、依赖关系和 APK 打包结果。
 
@@ -40,7 +41,7 @@
 | MNN | 3.6.0，commit `cc20f672af9e177e2fa338c332dc097de2fc9264` |
 | Native 构建 | Android NDK r27 系列、CMake 3.22.1、Ninja |
 | 推理后端 | CPU |
-| 模型类型 | 文本 LLM |
+| 模型类型 | 文本 LLM、带视觉模型文件的多模态 LLM |
 | 活跃模型 | 同一时间一个 |
 | 生成请求 | 同一时间一个 |
 | Server 地址 | `127.0.0.1`，或通过 `allInterfaces` 绑定 `0.0.0.0` |
@@ -51,9 +52,9 @@
 - iOS、Windows、macOS、Linux Flutter 平台；
 - `armeabi-v7a`、`x86`、`x86_64` Android ABI；
 - `/v1/completions`；
-- LAN 监听和远程设备直连；
 - 多模型同时加载或并发生成队列；
-- multimodal、vision、audio、embedding、tool calling；
+- audio、embedding；
+- `response_format`、`logprobs`、`top_logprobs`；
 - OpenCL、QNN 等非 CPU 后端；
 - 从 pub.dev 安装。
 
@@ -306,6 +307,14 @@ await logSubscription.cancel();
 
 `importModelDirectory()` 会启动 Android Activity，因此需要在已附加 Activity 的 Flutter UI 环境中调用。模型加载、Server 启停等耗时操作由插件转移到后台线程。
 
+宿主应用自己的下载器可以在完成校验后直接调用：
+
+```dart
+final imported = await engine.importModelFromPath(downloadedDirectory.path);
+```
+
+该入口与 SAF 导入复用同一套目录校验和原子提交逻辑。
+
 重要状态约束：
 
 - 启动 Server 前必须先加载模型；
@@ -339,10 +348,10 @@ Qwen3-0.6B-MNN/
 插件会把整个目录复制到宿主应用私有目录：
 
 ```text
-<application filesDir>/mnn_test/models/<model-key>/
+<application filesDir>/mnn/models/<model-key>/
 ```
 
-测试数据、staging、runtime 和 diagnostics 均位于统一的 `<application filesDir>/mnn_test/` 根目录下。第一阶段会把非 CPU `backend_type` 覆盖为 CPU，并对 visual/audio 配置给出不受支持的警告。
+staging、runtime 和 diagnostics 均位于统一的 `<application filesDir>/mnn/` 根目录下。插件首次使用新版本时会尝试把旧的 `mnn_test/` 根目录整体迁移到 `mnn/`；迁移失败时保留旧目录，不删除模型数据。当前推理后端固定为 CPU。
 
 仓库提供固定版本的 Qwen3-0.6B-MNN 测试模型下载脚本：
 
@@ -369,7 +378,7 @@ http://127.0.0.1:8081
 | `GET` | `/` | 内置 API 测试页 |
 | `GET` | `/health` | Engine、模型和 Server 状态 |
 | `GET` | `/v1/models` | 当前加载模型的 OpenAI 兼容列表 |
-| `POST` | `/v1/chat/completions` | 流式或非流式文本生成 |
+| `POST` | `/v1/chat/completions` | 流式或非流式生成，支持图片内容与 function tools |
 
 设置 `apiKey` 后，除静态测试页 `/` 外的 API 端点要求：
 
@@ -380,15 +389,16 @@ Authorization: Bearer <api-key>
 Chat Completions 当前接受：
 
 - `model`：可选；提供时必须匹配当前加载模型 ID；
-- `messages`：必填，支持 `system`、`user`、`assistant`，`content` 必须是字符串；
+- `messages`：必填，支持 `system`、`user`、`assistant`、`tool`；文本可用字符串，视觉模型可使用含 `text` / `image_url` 的 content 数组；
 - `stream`：可选，默认 `false`；
 - `temperature`：`0.0` 到 `2.0`；
 - `top_p`：`0.0` 到 `1.0`；
 - `max_tokens`：`1` 到 `8192`，默认 `512`；
 - `n`：只能为 `1`；
 - `frequency_penalty` 和 `presence_penalty`：只能为 `0`。
+- `tools`、`tool_choice`、`parallel_tool_calls`：支持 function tools；当前单次只生成一组调用。
 
-请求体最大为 2 MiB。`tools`、`tool_choice`、`parallel_tool_calls`、`response_format`、`logprobs` 和 `top_logprobs` 当前不受支持。
+请求体最大为 2 MiB。`response_format`、`logprobs` 和 `top_logprobs` 当前不受支持。
 
 ### 从开发机访问真机 Server
 
