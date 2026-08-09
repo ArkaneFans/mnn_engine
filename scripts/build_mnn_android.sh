@@ -8,13 +8,22 @@ android_ndk="${ANDROID_NDK:-${HOME}/android-ndk-r27d}"
 ninja_bin="/usr/bin/ninja"
 verifier_script="${plugin_root}/scripts/verify_mnn_artifacts.sh"
 adapter_abi_version="2"
+expected_cmake_version="3.22.1"
 
 if [[ ! -x "${cmake_bin}" ]]; then
-    printf 'CMake 3.22.1 is missing. Run scripts/prepare_mnn_build_env.ps1 first.\n' >&2
+    printf 'CMake %s is missing. Run scripts/prepare_mnn_build_env.ps1 first.\n' "${expected_cmake_version}" >&2
     exit 10
 fi
-if [[ "$("${cmake_bin}" --version | head -n 1)" != "cmake version 3.22.1" ]]; then
-    printf 'MNN_CMAKE must point to CMake 3.22.1: %s\n' "${cmake_bin}" >&2
+cmake_version_line="$("${cmake_bin}" --version | sed -n '1p')"
+if [[ "${cmake_version_line}" =~ ^cmake\ version\ ([0-9]+\.[0-9]+\.[0-9]+)([-+].*)?$ ]]; then
+    cmake_version="${BASH_REMATCH[1]}"
+else
+    printf 'Unable to parse the CMake version reported by %s: %s\n' "${cmake_bin}" "${cmake_version_line}" >&2
+    exit 11
+fi
+if [[ "${cmake_version}" != "${expected_cmake_version}" ]]; then
+    printf 'MNN_CMAKE must point to CMake %s, but reported %s: %s\n' \
+        "${expected_cmake_version}" "${cmake_version_line}" "${cmake_bin}" >&2
     exit 11
 fi
 if [[ ! -f "${android_ndk}/build/cmake/android.toolchain.cmake" ]]; then
@@ -36,7 +45,6 @@ fi
 
 mnn_commit="$(git -C "${mnn_root}" rev-parse HEAD)"
 ndk_revision="$(sed -n 's/^Pkg.Revision[[:space:]]*=[[:space:]]*//p' "${android_ndk}/source.properties")"
-cmake_version="$("${cmake_bin}" --version | head -n 1 | awk '{print $3}')"
 ninja_version="$("${ninja_bin}" --version)"
 flags_key='CMAKE_BUILD_TYPE=Release|ANDROID_ABI=arm64-v8a|ANDROID_PLATFORM=android-28|ANDROID_STL=c++_static|ANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON|MNN_BUILD_SHARED_LIBS=ON|MNN_BUILD_FOR_ANDROID_COMMAND=ON|MNN_BUILD_LLM=ON|MNN_BUILD_LLM_OMNI=ON|MNN_LOW_MEMORY=ON|MNN_SUPPORT_TRANSFORMER_FUSE=ON|MNN_ARM82=ON|MNN_USE_LOGCAT=ON|MNN_SEP_BUILD=OFF|MNN_KLEIDIAI=OFF|MNN_BUILD_DIFFUSION=OFF|MNN_BUILD_OPENCV=ON|MNN_IMGCODECS=ON|MNN_BUILD_AUDIO=ON|MNN_OPENCL=OFF|MNN_QNN=OFF|MNN_BUILD_TEST=OFF|MNN_BUILD_BENCHMARK=OFF'
 adapter_hash="$(find "${plugin_root}/android/src/main/cpp" -maxdepth 1 -type f \( -name '*.cpp' -o -name '*.hpp' -o -name 'CMakeLists.txt' \) -print0 | sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}')"
