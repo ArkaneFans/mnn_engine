@@ -1,0 +1,160 @@
+name: Build Android native libraries
+
+on:
+  workflow_dispatch:
+    inputs:
+      verify_example_apk:
+        description: Build and inspect the Flutter example APK
+        required: true
+        default: true
+        type: boolean
+  push:
+    tags:
+      - "native-v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-android-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-arm64:
+    name: Android arm64-v8a
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out the plugin and MNN
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Record source revisions
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mnn_commit="$(git -C MNN rev-parse HEAD)"
+          short_commit="${mnn_commit:0:12}"
+          echo "mnn_commit=${mnn_commit}" >> "${GITHUB_OUTPUT}"
+          echo "short_commit=${short_commit}" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android native toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "cmake;3.22.1" \
+            "ndk;27.3.13750724"
+          sudo apt-get update
+          sudo apt-get install --yes ninja-build
+          echo "ANDROID_NDK=${ANDROID_SDK_ROOT}/ndk/27.3.13750724" >> "${GITHUB_ENV}"
+          echo "MNN_CMAKE=${ANDROID_SDK_ROOT}/cmake/3.22.1/bin/cmake" >> "${GITHUB_ENV}"
+
+      - name: Restore native build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/mnn_engine
+            .native/generated
+          key: mnn-native-${{ runner.os }}-${{ steps.source.outputs.mnn_commit }}-${{ hashFiles('scripts/build_mnn_android.sh', 'scripts/verify_mnn_artifacts.sh', 'scripts/package_mnn_artifacts.sh', 'android/src/main/cpp/**') }}
+
+      - name: Build MNN and the JNI bridge
+        shell: bash
+        run: bash scripts/build_mnn_android.sh "${GITHUB_WORKSPACE}"
+
+      - name: Verify and package the native libraries
+        shell: bash
+        run: bash scripts/package_mnn_artifacts.sh "${GITHUB_WORKSPACE}"
+
+      - name: Set up Flutter
+        if: github.event_name != 'workflow_dispatch' || inputs.verify_example_apk
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: "3.35.2"
+          cache: true
+
+      - name: Analyze and test the plugin
+        if: github.event_name != 'workflow_dispatch' || inputs.verify_example_apk
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter analyze
+          flutter test
+
+      - name: Build and inspect the example APK
+        if: github.event_name != 'workflow_dispatch' || inputs.verify_example_apk
+        id: apk
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd example
+          flutter build apk \
+            --release \
+            --target-platform android-arm64
+          apk_path="$(find "${GITHUB_WORKSPACE}" -type f -path '*/outputs/flutter-apk/app-release.apk' -print -quit)"
+          test -n "${apk_path}"
+          bash "${GITHUB_WORKSPACE}/scripts/verify_mnn_artifacts.sh" "${GITHUB_WORKSPACE}" "${apk_path}"
+          echo "path=${apk_path}" >> "${GITHUB_OUTPUT}"
+
+      - name: Assemble the downloadable bundle
+        id: bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle_name="mnn-engine-native-android-arm64-v8a-${{ steps.source.outputs.short_commit }}"
+          bundle_root="dist/${bundle_name}"
+          mkdir -p \
+            "${bundle_root}/android/src/main/jniLibs/arm64-v8a" \
+            "${bundle_root}/native"
+          cp android/src/main/jniLibs/arm64-v8a/libMNN.so \
+            "${bundle_root}/android/src/main/jniLibs/arm64-v8a/"
+          cp android/src/main/jniLibs/arm64-v8a/libmnn_engine_jni.so \
+            "${bundle_root}/android/src/main/jniLibs/arm64-v8a/"
+          cp native/android-arm64-v8a.json "${bundle_root}/native/"
+          cp LICENSE THIRD_PARTY_NOTICES.md "${bundle_root}/"
+          (
+            cd "${bundle_root}"
+            sha256sum \
+              android/src/main/jniLibs/arm64-v8a/libMNN.so \
+              android/src/main/jniLibs/arm64-v8a/libmnn_engine_jni.so \
+              native/android-arm64-v8a.json > SHA256SUMS
+          )
+          tar -czf "dist/${bundle_name}.tar.gz" -C "${bundle_root}" .
+          echo "archive=dist/${bundle_name}.tar.gz" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload native build outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: mnn-engine-android-arm64-${{ steps.source.outputs.short_commit }}
+          retention-days: 30
+          if-no-files-found: error
+          path: ${{ steps.bundle.outputs.archive }}
+
+      - name: Upload the verified example APK
+        if: github.event_name != 'workflow_dispatch' || inputs.verify_example_apk
+        uses: actions/upload-artifact@v4
+        with:
+          name: mnn-engine-example-apk-${{ steps.source.outputs.short_commit }}
+          retention-days: 14
+          if-no-files-found: error
+          path: ${{ steps.apk.outputs.path }}

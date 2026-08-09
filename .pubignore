@@ -1,0 +1,34 @@
+# Repository and editor metadata.
+/.git/
+/.github/
+/.gitignore
+/.gitattributes
+/.gitmodules
+/.metadata
+/.idea/
+/.vscode/
+*.iml
+
+# Local Dart, Flutter, Gradle, and native build outputs.
+/.dart_tool/
+/.flutter-plugins-dependencies
+/build/
+/coverage/
+/.native/
+/.test-models/
+/.wsl-build/
+/pubspec.lock
+**/.dart_tool/
+**/.gradle/
+**/.idea/
+**/build/
+**/coverage/
+**/local.properties
+**/*.iml
+
+# The upstream source checkout is used only by maintainers to rebuild the
+# precompiled libraries. Pub consumers receive the verified binaries instead.
+/MNN/
+
+# Example lockfiles are development-only and should not constrain consumers.
+/example/pubspec.lock

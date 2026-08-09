@@ -10,7 +10,7 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
           return <String, Object?>{
-            'pluginVersion': '0.0.1',
+            'pluginVersion': '0.1.0',
             'mnnVersion': '3.6.0',
             'mnnCommit': 'cc20f672',
             'abi': 'arm64-v8a',

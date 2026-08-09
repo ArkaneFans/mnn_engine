@@ -1,5 +1,12 @@
 group = "com.arkanefans.mnn_engine"
-version = "1.0-SNAPSHOT"
+
+def pubspecText = file("../pubspec.yaml").getText("UTF-8")
+def pubspecVersionMatcher = pubspecText =~ /(?m)^version:\s*([^\s]+)\s*$/
+if (!pubspecVersionMatcher.find()) {
+    throw new GradleException("Unable to read the mnn_engine version from pubspec.yaml.")
+}
+def mnnEngineVersion = pubspecVersionMatcher.group(1)
+version = mnnEngineVersion
 
 buildscript {
     ext.kotlin_version = "2.1.0"
@@ -24,72 +31,21 @@ allprojects {
 apply plugin: "com.android.library"
 apply plugin: "kotlin-android"
 
-def pluginRoot = projectDir.parentFile
-def generatedNativeDir = file("${pluginRoot}/.native/generated/arm64-v8a")
-def generatedMnnLibrary = file("${generatedNativeDir}/libMNN.so")
-def generatedJniLibrary = file("${generatedNativeDir}/libmnn_engine_jni.so")
-def generatedBuildInfo = file("${generatedNativeDir}/mnn_build_info.json")
-def verifierPowerShell = file("${pluginRoot}/scripts/verify_mnn_artifacts.ps1")
-def verifierShell = file("${pluginRoot}/scripts/verify_mnn_artifacts.sh")
+def bundledNativeDir = file("src/main/jniLibs/arm64-v8a")
+def bundledMnnLibrary = file("${bundledNativeDir}/libMNN.so")
+def bundledJniLibrary = file("${bundledNativeDir}/libmnn_engine_jni.so")
 
-tasks.register("prepareMnnNativeArm64") {
-    outputs.files(generatedMnnLibrary, generatedJniLibrary, generatedBuildInfo)
-    outputs.upToDateWhen { false }
+tasks.register("verifyBundledMnnNativeArtifacts") {
+    inputs.files(bundledMnnLibrary, bundledJniLibrary)
     doLast {
-        if (generatedMnnLibrary.isFile() && generatedJniLibrary.isFile() && generatedBuildInfo.isFile()) {
-            return
+        def missingArtifacts = [bundledMnnLibrary, bundledJniLibrary].findAll {
+            !it.isFile() || it.length() == 0
         }
-        if (!org.gradle.internal.os.OperatingSystem.current().isWindows()) {
+        if (!missingArtifacts.isEmpty()) {
             throw new GradleException(
-                "MNN native artifacts are missing. Run scripts/build_mnn_android.sh in WSL/Linux first."
+                "mnn_engine is missing its bundled Android arm64 native libraries: " +
+                    missingArtifacts.collect { it.absolutePath }.join(", ")
             )
-        }
-        exec {
-            workingDir pluginRoot
-            commandLine(
-                "pwsh",
-                "-NoProfile",
-                "-File",
-                file("${pluginRoot}/scripts/build_mnn_android.ps1").absolutePath,
-            )
-        }
-    }
-}
-
-tasks.register("copyMnnNativeArtifacts") {
-    dependsOn("prepareMnnNativeArm64")
-    outputs.files(generatedMnnLibrary, generatedJniLibrary, generatedBuildInfo)
-}
-
-tasks.register("verifyMnnNativeArtifacts") {
-    dependsOn("copyMnnNativeArtifacts")
-    inputs.files(
-        generatedMnnLibrary,
-        generatedJniLibrary,
-        generatedBuildInfo,
-        verifierPowerShell,
-        verifierShell,
-    )
-    doLast {
-        if (org.gradle.internal.os.OperatingSystem.current().isWindows()) {
-            exec {
-                workingDir pluginRoot
-                commandLine(
-                    "pwsh",
-                    "-NoProfile",
-                    "-File",
-                    verifierPowerShell.absolutePath,
-                    "-PluginRoot",
-                    pluginRoot.absolutePath,
-                )
-            }
-        } else if (org.gradle.internal.os.OperatingSystem.current().isLinux()) {
-            exec {
-                workingDir pluginRoot
-                commandLine("bash", verifierShell.absolutePath, pluginRoot.absolutePath)
-            }
-        } else {
-            throw new GradleException("MNN native artifact verification only supports Windows/WSL2 or Linux.")
         }
     }
 }
@@ -99,7 +55,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("com.google.code.gson:gson:2.11.0")
     implementation("io.ktor:ktor-server-core:3.1.3")
-    implementation("io.ktor:ktor-server-netty:3.1.3")
+    implementation("io.ktor:ktor-server-cio:3.1.3")
     implementation("io.ktor:ktor-server-call-logging:3.1.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
 }
@@ -120,13 +76,17 @@ android {
 
     sourceSets {
         main.java.srcDirs += "src/main/kotlin"
-        main.jniLibs.srcDirs += file("../.native/generated")
         test.java.srcDirs += "src/test/kotlin"
     }
 
     defaultConfig {
         minSdk = 28
+        buildConfigField "String", "MNN_ENGINE_VERSION", "\"${mnnEngineVersion}\""
         consumerProguardFiles "consumer-rules.pro"
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     dependencies {
@@ -148,5 +108,5 @@ android {
 }
 
 tasks.named("preBuild").configure {
-    dependsOn("verifyMnnNativeArtifacts")
+    dependsOn("verifyBundledMnnNativeArtifacts")
 }

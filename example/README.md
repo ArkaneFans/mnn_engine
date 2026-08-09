@@ -1,16 +1,16 @@
-# mnn_engine_example
+# mnn_engine example
 
-Demonstrates how to use the mnn_engine plugin.
+This minimal Android application verifies plugin registration, loads the
+bundled ARM64 native libraries, calls `MnnEngine.initialize()`, and displays
+the MNN version, commit, ABI, and runtime status returned by the plugin.
 
-## Getting Started
+Run it on an ARM64 Android device with API 28 or newer:
 
-This project is a starting point for a Flutter application.
+```shell
+flutter pub get
+flutter run
+```
 
-A few resources to get you started if this is your first Flutter project:
-
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+The example intentionally does not bundle a model. See the root
+[`README.md`](../README.md) for model import, lifecycle, and OpenAI-compatible
+server examples.

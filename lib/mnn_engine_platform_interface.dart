@@ -31,6 +31,9 @@ abstract class MnnEnginePlatform extends PlatformInterface {
   Future<void> deleteImportedModel(String modelId);
   Future<MnnModelInfo> loadModel(String modelId);
   Future<void> unloadModel();
+  /// Performs an advisory bind probe without starting the server. It is useful
+  /// for diagnostics only; callers should still handle `port_in_use` from
+  /// [startServer], because a probe and a later bind are not atomic.
   Future<MnnPortCheckResult> checkPort({
     required MnnServerBindMode bindMode,
     required int port,

@@ -13,9 +13,9 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
 import io.ktor.server.application.install
+import io.ktor.server.cio.CIO
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
-import io.ktor.server.netty.Netty
 import io.ktor.server.plugins.calllogging.CallLogging
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respondText
@@ -54,7 +54,12 @@ class MnnOpenAiServer(
         mediaStager.cleanupStale()
         val startedAt = System.currentTimeMillis() / 1000
         val startMonotonic = SystemClock.elapsedRealtime()
-        val created = embeddedServer(Netty, host = mode.host, port = port) {
+        val created = embeddedServer(
+            factory = CIO,
+            configure = {
+                MnnServerSocketPolicy.configure(this, mode.host, port)
+            },
+        ) {
             install(CallLogging) { level = Level.INFO }
             routing {
                 get("/") {

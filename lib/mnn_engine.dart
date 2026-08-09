@@ -45,6 +45,9 @@ class MnnEngine {
 
   Future<void> unloadModel() => MnnEnginePlatform.instance.unloadModel();
 
+  /// Performs an advisory port probe. The authoritative result is the bind
+  /// performed by [startServer], whose `port_in_use` error should be handled
+  /// by callers.
   Future<MnnPortCheckResult> checkPort({
     MnnServerBindMode bindMode = MnnServerBindMode.loopback,
     required int port,
