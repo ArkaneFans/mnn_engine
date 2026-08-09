@@ -20,7 +20,7 @@ void main() {
         .setMockMethodCallHandler(channel, (call) async {
           expect(call.method, 'initialize');
           return <String, Object?>{
-            'pluginVersion': '0.1.0',
+            'pluginVersion': '0.0.1',
             'mnnVersion': '3.6.0',
             'mnnCommit': 'cc20f672',
             'abi': 'arm64-v8a',
