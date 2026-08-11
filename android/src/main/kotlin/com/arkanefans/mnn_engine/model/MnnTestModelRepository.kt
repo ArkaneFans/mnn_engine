@@ -18,11 +18,6 @@ class MnnTestModelRepository(
     }
 
     fun find(modelId: String, activeModelId: String? = null): MnnModelInfo? {
-        val modelKey = modelId.removePrefix("local/")
-        if (modelId.startsWith("local/") && modelKey.isNotBlank() &&
-            !modelKey.contains('/') && !modelKey.contains('\\')) {
-            return modelInfo(directories.modelDir(modelKey), activeModelId)
-        }
         return list(activeModelId).firstOrNull { it.modelId == modelId }
     }
 
@@ -41,7 +36,7 @@ class MnnTestModelRepository(
         val metadata = readMarketMetadata(dir)
         val modelKey = dir.name
         val modelId = metadata.string("modelId", "model_id")?.takeIf(String::isNotBlank)
-            ?: "local/$modelKey"
+            ?: modelKey
         val validationResult = runCatching { validator.validate(dir) }
         val validation = validationResult.getOrNull()
         val warnings = validation?.warnings

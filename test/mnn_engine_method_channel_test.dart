@@ -94,9 +94,9 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
           expect(call.method, 'loadModel');
-          expect(call.arguments, <String, Object?>{'modelId': 'local/qwen'});
+          expect(call.arguments, <String, Object?>{'modelId': 'qwen'});
           return <String, Object?>{
-            'modelId': 'local/qwen',
+            'modelId': 'qwen',
             'modelKey': 'qwen',
             'displayName': 'Qwen',
             'modelDirPath': '/models/qwen',
@@ -108,7 +108,7 @@ void main() {
           };
         });
 
-    final model = await platform.loadModel('local/qwen');
+    final model = await platform.loadModel('qwen');
 
     expect(model.loadDurationMs, 1234);
   });
@@ -122,7 +122,7 @@ void main() {
             'replaceExisting': false,
           });
           return <String, Object?>{
-            'modelId': 'local/qwen',
+            'modelId': 'qwen',
             'modelKey': 'qwen',
             'displayName': 'Qwen',
             'modelDirPath': '/data/user/0/app/files/mnn/models/qwen',
@@ -138,7 +138,7 @@ void main() {
       replaceExisting: false,
     );
 
-    expect(model.modelId, 'local/qwen');
+    expect(model.modelId, 'qwen');
     expect(model.modelDirPath, contains('/mnn/models/qwen'));
   });
 

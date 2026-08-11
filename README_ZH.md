@@ -191,7 +191,7 @@ curl http://127.0.0.1:8081/v1/chat/completions \
   -H "Authorization: Bearer replace-with-a-runtime-secret" \
   -H "Content-Type: application/json" \
   --data-binary '{
-    "model": "local/Qwen3-0.6B-MNN",
+    "model": "qwen3-0-6b-mnn",
     "messages": [{"role": "user", "content": "你好"}],
     "stream": true,
     "max_tokens": 128

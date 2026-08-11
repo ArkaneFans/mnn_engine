@@ -10,7 +10,7 @@ class MnnChatRequestParserTest {
     fun parsesSupportedChatParameters() {
         val request = MnnChatRequestParser.parse(
             """{
-              "model":"local/qwen",
+              "model":"qwen",
               "messages":[
                 {"role":"system","content":"be concise"},
                 {"role":"user","content":"hello"}
@@ -23,7 +23,7 @@ class MnnChatRequestParserTest {
             }""",
         )
 
-        assertEquals("local/qwen", request.model)
+        assertEquals("qwen", request.model)
         assertEquals(true, request.stream)
         assertEquals(0.3, request.temperature)
         assertEquals(0.8, request.topP)

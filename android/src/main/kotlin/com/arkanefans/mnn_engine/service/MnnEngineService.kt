@@ -32,11 +32,16 @@ class MnnEngineService : Service() {
     lateinit var runtimeManager: MnnRuntimeManager
         private set
     private lateinit var notificationManager: MnnNotificationManager
+    private lateinit var powerController: MnnServerPowerController
     private lateinit var openAiServer: MnnOpenAiServer
     private val revision = AtomicLong(0)
     private val runtimeListeners = CopyOnWriteArrayList<(Map<String, Any?>) -> Unit>()
+    private val foregroundLifecycleLock = Any()
     @Volatile
     private var snapshot = RuntimeSnapshot()
+    @Volatile
+    private var foregroundRequested = false
+    private var foregroundSessionActive = false
 
     override fun onCreate() {
         super.onCreate()
@@ -59,6 +64,7 @@ class MnnEngineService : Service() {
             )
         }
         notificationManager = MnnNotificationManager(this)
+        powerController = MnnServerPowerController(this, logStore)
         openAiServer = MnnOpenAiServer(
             context = this,
             runtimeManager = runtimeManager,
@@ -77,15 +83,24 @@ class MnnEngineService : Service() {
             val baseUrl = intent.getStringExtra(EXTRA_BASE_URL) ?: "http://127.0.0.1:8081"
             val testUrl = intent.getStringExtra(EXTRA_TEST_URL) ?: baseUrl
             val modelName = intent.getStringExtra(EXTRA_MODEL_NAME) ?: "MNN model"
-            val notification = notificationManager.build(baseUrl, testUrl, modelName)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(
-                    MnnNotificationManager.NOTIFICATION_ID,
-                    notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
-                )
-            } else {
-                startForeground(MnnNotificationManager.NOTIFICATION_ID, notification)
+            val keepWifiAwake = intent.getBooleanExtra(EXTRA_KEEP_WIFI_AWAKE, false)
+            try {
+                synchronized(foregroundLifecycleLock) {
+                    if (!foregroundRequested) {
+                        stopSelf(startId)
+                        return START_NOT_STICKY
+                    }
+                    enterForegroundSessionLocked(
+                        baseUrl = baseUrl,
+                        testUrl = testUrl,
+                        modelName = modelName,
+                        keepWifiAwake = keepWifiAwake,
+                    )
+                }
+            } catch (error: Throwable) {
+                logStore.error(TAG, "Failed to enter foreground serving mode", error)
+                clearForegroundSession(stopService = false)
+                stopSelf(startId)
             }
         }
         return START_NOT_STICKY
@@ -231,14 +246,13 @@ class MnnEngineService : Service() {
         updateSnapshot(snapshot.copy(serverState = "starting", lastError = null))
         val baseUrl = "http://127.0.0.1:$port"
         val testUrl = baseUrl
-        val foregroundIntent = Intent(this, MnnEngineService::class.java).apply {
-            action = ACTION_START_FOREGROUND
-            putExtra(EXTRA_BASE_URL, baseUrl)
-            putExtra(EXTRA_TEST_URL, testUrl)
-            putExtra(EXTRA_MODEL_NAME, model.displayName)
-        }
-        ContextCompat.startForegroundService(this, foregroundIntent)
         return try {
+            startForegroundSession(
+                baseUrl = baseUrl,
+                testUrl = testUrl,
+                modelName = model.displayName,
+                keepWifiAwake = mode == MnnBindMode.ALL_INTERFACES,
+            )
             val info = openAiServer.start(mode, port, apiKey)
             updateSnapshot(
                 snapshot.copy(
@@ -265,19 +279,20 @@ class MnnEngineService : Service() {
                         cause = error,
                     )
             }
-            stopForegroundCompat()
-            stopSelf()
+            clearForegroundSession()
             updateSnapshot(snapshot.copy(serverState = "error", server = null, lastError = operationError.message))
             throw operationError
         }
     }
 
     fun stopServer() {
-        if (openAiServer.info() == null) return
+        if (openAiServer.info() == null) {
+            clearForegroundSession()
+            return
+        }
         updateSnapshot(snapshot.copy(serverState = "stopping"))
         openAiServer.stop()
-        stopForegroundCompat()
-        stopSelf()
+        clearForegroundSession()
         updateSnapshot(snapshot.copy(serverState = "stopped", server = null, lastError = null))
     }
 
@@ -324,8 +339,85 @@ class MnnEngineService : Service() {
 
     private fun updateSnapshot(newSnapshot: RuntimeSnapshot) {
         snapshot = newSnapshot.copy(revision = revision.incrementAndGet())
-        val event = mapOf("type" to "snapshot", "snapshot" to snapshot.toMap())
+        val event = mapOf("type" to "snapshot", "snapshot" to getSnapshot())
         runtimeListeners.forEach { listener -> listener(event) }
+    }
+
+    private fun startForegroundSession(
+        baseUrl: String,
+        testUrl: String,
+        modelName: String,
+        keepWifiAwake: Boolean,
+    ) {
+        val foregroundIntent = Intent(this, MnnEngineService::class.java).apply {
+            action = ACTION_START_FOREGROUND
+            putExtra(EXTRA_BASE_URL, baseUrl)
+            putExtra(EXTRA_TEST_URL, testUrl)
+            putExtra(EXTRA_MODEL_NAME, modelName)
+            putExtra(EXTRA_KEEP_WIFI_AWAKE, keepWifiAwake)
+        }
+        synchronized(foregroundLifecycleLock) {
+            foregroundRequested = true
+            try {
+                ContextCompat.startForegroundService(this, foregroundIntent)
+                // The service already exists through the Flutter plugin binding.
+                // Promote it synchronously so the API server never starts before foreground
+                // mode and the server power locks are active. onStartCommand is
+                // retained as an idempotent fallback for Android's start callback.
+                enterForegroundSessionLocked(
+                    baseUrl = baseUrl,
+                    testUrl = testUrl,
+                    modelName = modelName,
+                    keepWifiAwake = keepWifiAwake,
+                )
+            } catch (error: Throwable) {
+                clearForegroundSessionLocked()
+                stopSelf()
+                throw error
+            }
+        }
+    }
+
+    private fun enterForegroundSessionLocked(
+        baseUrl: String,
+        testUrl: String,
+        modelName: String,
+        keepWifiAwake: Boolean,
+    ) {
+        if (foregroundSessionActive) return
+        val notification = notificationManager.build(baseUrl, testUrl, modelName)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                MnnNotificationManager.NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+            )
+        } else {
+            startForeground(MnnNotificationManager.NOTIFICATION_ID, notification)
+        }
+        try {
+            powerController.acquire(keepWifiAwake)
+            foregroundSessionActive = true
+        } catch (error: Throwable) {
+            stopForegroundCompat()
+            throw error
+        }
+    }
+
+    private fun clearForegroundSession(stopService: Boolean = true) {
+        synchronized(foregroundLifecycleLock) {
+            clearForegroundSessionLocked()
+        }
+        if (stopService) stopSelf()
+    }
+
+    private fun clearForegroundSessionLocked() {
+        foregroundRequested = false
+        powerController.release()
+        if (foregroundSessionActive) {
+            stopForegroundCompat()
+            foregroundSessionActive = false
+        }
     }
 
     private fun cleanupStaging() {
@@ -348,6 +440,7 @@ class MnnEngineService : Service() {
 
     override fun onDestroy() {
         runCatching { openAiServer.stop() }
+        clearForegroundSession(stopService = false)
         runtimeManager.release()
         logStore.info(TAG, "Service destroyed")
         runtimeListeners.clear()
@@ -365,5 +458,6 @@ class MnnEngineService : Service() {
         const val EXTRA_BASE_URL = "base_url"
         const val EXTRA_TEST_URL = "test_url"
         const val EXTRA_MODEL_NAME = "model_name"
+        const val EXTRA_KEEP_WIFI_AWAKE = "keep_wifi_awake"
     }
 }
