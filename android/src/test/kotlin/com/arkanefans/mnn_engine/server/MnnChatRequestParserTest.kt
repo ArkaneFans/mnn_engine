@@ -32,6 +32,28 @@ class MnnChatRequestParserTest {
     }
 
     @Test
+    fun usesUnlimitedGenerationWhenTokenLimitIsMissing() {
+        val request = MnnChatRequestParser.parse(
+            """{"messages":[{"role":"user","content":"hello"}]}""",
+        )
+
+        assertEquals(-1, request.maxTokens)
+    }
+
+    @Test
+    fun parsesLlamaServerTokenLimitAliases() {
+        val completionTokens = MnnChatRequestParser.parse(
+            """{"messages":[{"role":"user","content":"hello"}],"max_completion_tokens":32}""",
+        )
+        val nativeTokens = MnnChatRequestParser.parse(
+            """{"messages":[{"role":"user","content":"hello"}],"n_predict":0}""",
+        )
+
+        assertEquals(32, completionTokens.maxTokens)
+        assertEquals(0, nativeTokens.maxTokens)
+    }
+
+    @Test
     fun rejectsMultipleChoices() {
         val error = assertFailsWith<IllegalArgumentException> {
             MnnChatRequestParser.parse(
@@ -96,7 +118,7 @@ class MnnChatRequestParserTest {
         }
         assertFailsWith<IllegalArgumentException> {
             MnnChatRequestParser.parse(
-                """{"messages":[{"role":"user","content":"hello"}],"max_tokens":0}""",
+                """{"messages":[{"role":"user","content":"hello"}],"max_tokens":-2}""",
             )
         }
         assertFailsWith<IllegalArgumentException> {

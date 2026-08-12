@@ -70,8 +70,7 @@ internal object MnnChatRequestParser {
     const val MAX_REQUEST_BYTES = 16 * 1024 * 1024
     private const val MAX_TOOLS = 32
     private const val MAX_TOOLS_JSON_BYTES = 128 * 1024
-    private const val DEFAULT_MAX_TOKENS = 512
-    private const val MAX_TOKENS = 8192
+    private const val NO_TOKEN_LIMIT = -1
     private val allowedRoles = setOf("system", "user", "assistant", "tool")
     private val unsupportedFields = setOf(
         "response_format",
@@ -95,12 +94,15 @@ internal object MnnChatRequestParser {
         val parallel = root.bool("parallel_tool_calls") ?: false
         val temperature = root.double("temperature")
         val topP = root.double("top_p")
-        val maxTokens = root.int("max_tokens") ?: DEFAULT_MAX_TOKENS
+        val maxTokens = root.int("n_predict")
+            ?: root.int("max_completion_tokens")
+            ?: root.int("max_tokens")
+            ?: NO_TOKEN_LIMIT
         require(temperature == null || temperature in 0.0..2.0) {
             "temperature must be between 0 and 2."
         }
         require(topP == null || topP in 0.0..1.0) { "top_p must be between 0 and 1." }
-        require(maxTokens in 1..MAX_TOKENS) { "max_tokens must be between 1 and $MAX_TOKENS." }
+        require(maxTokens >= NO_TOKEN_LIMIT) { "max_tokens must be -1 or greater." }
         val frequencyPenalty = root.double("frequency_penalty") ?: 0.0
         val presencePenalty = root.double("presence_penalty") ?: 0.0
         require(frequencyPenalty == 0.0 && presencePenalty == 0.0) {

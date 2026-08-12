@@ -198,6 +198,9 @@ curl http://127.0.0.1:8081/v1/chat/completions \
   }'
 ```
 
+`max_tokens` 可选。省略或设为 `-1` 时，模型会持续生成，直到输出结束标记或
+运行时达到上下文容量上限。也支持 `max_completion_tokens` 和 `n_predict` 别名。
+
 使用 `MnnServerBindMode.allInterfaces` 时 Server 会监听 `0.0.0.0`，能够通过
 Wi-Fi、热点、VPN 等 IPv4 接口访问。除非设备处于可信网络，否则应始终配置 API Key。
 

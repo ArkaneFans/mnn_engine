@@ -13,6 +13,8 @@ using nlohmann::json;
 
 namespace {
 
+constexpr int kNoTokenLimit = -1;
+
 class Utf8StreamProcessor {
 public:
     explicit Utf8StreamProcessor(std::function<void(const std::string&)> callback)
@@ -195,8 +197,10 @@ MnnLlmSessionAdapter::Metrics MnnLlmSessionAdapter::generate(
     if (!requestConfigJson.empty() && !llm_->set_config(requestConfigJson)) {
         throw std::invalid_argument("MNN rejected request config");
     }
+    if (maxTokens < kNoTokenLimit) {
+        throw std::invalid_argument("maxTokens must be -1 or greater");
+    }
     const ChatMessages messages = parseMessages(messagesJson);
-    maxTokens = std::max(1, maxTokens);
     cancelRequested_.store(false);
     llm_->reset();
     restoreRunningStatusIfTerminal();
@@ -204,19 +208,22 @@ MnnLlmSessionAdapter::Metrics MnnLlmSessionAdapter::generate(
     SteppingStreamBuffer streamBuffer(onToken);
     std::ostream output(&streamBuffer);
     int generated = 0;
+    const auto hasTokenBudget = [&]() {
+        return maxTokens == kNoTokenLimit || generated < maxTokens;
+    };
     llm_->response(messages, &output, "<eop>", 0);
 
     auto resolveStep = [&]() {
         auto* context = const_cast<MNN::Transformer::LlmContext*>(llm_->getContext());
         if (context == nullptr) return;
         const bool cancelled = cancelRequested_.load() || streamBuffer.stopRequested();
-        if (context->status == LlmStatus::MAX_TOKENS_FINISHED && !cancelled && generated < maxTokens) {
+        if (context->status == LlmStatus::MAX_TOKENS_FINISHED && !cancelled && hasTokenBudget()) {
             context->status = LlmStatus::RUNNING;
             streamBuffer.discardPendingEop();
             return;
         }
         if (context->status == LlmStatus::NORMAL_FINISHED && !streamBuffer.pendingEop() &&
-            !cancelled && generated < maxTokens) {
+            !cancelled && hasTokenBudget()) {
             context->status = LlmStatus::RUNNING;
             return;
         }
@@ -225,10 +232,18 @@ MnnLlmSessionAdapter::Metrics MnnLlmSessionAdapter::generate(
 
     resolveStep();
     while (!cancelRequested_.load() && !streamBuffer.stopRequested() &&
-           !streamBuffer.finished() && generated < maxTokens) {
+           !streamBuffer.finished() && hasTokenBudget()) {
+        const auto* beforeContext = llm_->getContext();
+        const int beforeGenerated = beforeContext == nullptr ? generated : beforeContext->gen_seq_len;
         llm_->generate(1);
-        ++generated;
+        const auto* afterContext = llm_->getContext();
+        if (afterContext == nullptr) throw std::runtime_error("MNN generation context is unavailable");
+        generated = afterContext->gen_seq_len;
         resolveStep();
+        if (!cancelRequested_.load() && !streamBuffer.stopRequested() &&
+            !streamBuffer.finished() && hasTokenBudget() && generated <= beforeGenerated) {
+            throw std::runtime_error("MNN generation stopped before reaching an end marker");
+        }
     }
     streamBuffer.finalizePendingEop();
 
@@ -243,7 +258,8 @@ MnnLlmSessionAdapter::Metrics MnnLlmSessionAdapter::generate(
     }
     if (cancelRequested_.load() || streamBuffer.stopRequested()) {
         metrics.finishReason = "cancelled";
-    } else if (generated >= maxTokens && !streamBuffer.finished()) {
+    } else if (maxTokens != kNoTokenLimit && generated >= maxTokens &&
+               (context == nullptr || context->status != LlmStatus::NORMAL_FINISHED)) {
         metrics.finishReason = "length";
     }
     return metrics;

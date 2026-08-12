@@ -211,6 +211,10 @@ curl http://127.0.0.1:8081/v1/chat/completions \
   }'
 ```
 
+`max_tokens` is optional. When omitted or set to `-1`, generation continues
+until the model emits an end token or the runtime reaches its context limit.
+`max_completion_tokens` and `n_predict` are accepted as aliases.
+
 Use `MnnServerBindMode.allInterfaces` to listen on `0.0.0.0`. This makes the
 server reachable through Wi-Fi, hotspots, VPNs, and other IPv4 interfaces.
 Always configure an API key unless the device is on a trusted network.

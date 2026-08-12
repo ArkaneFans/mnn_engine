@@ -122,7 +122,7 @@ class MnnRuntimeManager(
             val config = JsonParser.parseString(baseConfigJson).asJsonObject
             temperature?.let { config.addProperty("temperature", it) }
             topP?.let { config.addProperty("topP", it) }
-            config.addProperty("max_new_tokens", maxTokens)
+            if (maxTokens >= 0) config.addProperty("max_new_tokens", maxTokens)
             val jinja = config.getAsJsonObject("jinja") ?: JsonObject().also { config.add("jinja", it) }
             val context = jinja.getAsJsonObject("context") ?: JsonObject().also { jinja.add("context", it) }
             context.add("tools", tools.deepCopy())
