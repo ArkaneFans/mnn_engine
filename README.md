@@ -25,7 +25,8 @@ NDK, Linux, or WSL to build.
   Framework or from app-owned private storage.
 - Validates `config.json` and all referenced model, weight, embedding, and
   tokenizer files before activation.
-- Loads, unloads, lists, and deletes imported models.
+- Loads, unloads, lists, renames, and deletes imported models. Each model
+  directory name is also its runtime and API model ID.
 - Keeps model and server state in an Android foreground service.
 - Provides runtime snapshots, state events, log snapshots, and live log events.
 - Runs a Ktor CIO server on loopback or all available IPv4 interfaces.
@@ -59,7 +60,7 @@ Add the package to your Flutter application:
 
 ```yaml
 dependencies:
-  mnn_engine: ^0.0.1
+  mnn_engine: ^0.0.2
 ```
 
 Then run:

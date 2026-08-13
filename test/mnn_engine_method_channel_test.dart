@@ -142,6 +142,102 @@ void main() {
     expect(model.modelDirPath, contains('/mnn/models/qwen'));
   });
 
+  test('directory import result forwards automatic naming options', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          expect(call.method, 'importModelDirectoryWithResult');
+          expect(call.arguments, <String, Object?>{
+            'replaceExisting': false,
+            'autoRename': true,
+            'unavailableNames': <String>['Qwen'],
+          });
+          return <String, Object?>{
+            'requestedModelName': 'Qwen',
+            'model': <String, Object?>{
+              'modelId': 'Qwen (2)',
+              'modelKey': 'Qwen (2)',
+              'displayName': 'Qwen (2)',
+              'modelDirPath': '/models/Qwen (2)',
+              'configPath': '/models/Qwen (2)/config.json',
+              'sizeBytes': 100,
+              'importedAt': 1,
+              'isActive': false,
+            },
+          };
+        });
+
+    final result = await platform.importModelDirectoryWithResult(
+      replaceExisting: false,
+      autoRename: true,
+      unavailableNames: const <String>['Qwen'],
+    );
+
+    expect(result.requestedModelName, 'Qwen');
+    expect(result.model.modelKey, 'Qwen (2)');
+    expect(result.wasRenamed, isTrue);
+  });
+
+  test('path import result forwards automatic naming options', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          expect(call.method, 'importModelFromPathWithResult');
+          expect(call.arguments, <String, Object?>{
+            'directoryPath': '/downloads/qwen',
+            'replaceExisting': false,
+            'autoRename': true,
+            'unavailableNames': <String>['Qwen'],
+          });
+          return <String, Object?>{
+            'requestedModelName': 'Qwen',
+            'model': <String, Object?>{
+              'modelId': 'Qwen (2)',
+              'modelKey': 'Qwen (2)',
+              'displayName': 'Qwen (2)',
+              'modelDirPath': '/models/Qwen (2)',
+              'configPath': '/models/Qwen (2)/config.json',
+              'sizeBytes': 100,
+              'importedAt': 1,
+              'isActive': false,
+            },
+          };
+        });
+
+    final result = await platform.importModelFromPathWithResult(
+      '/downloads/qwen',
+      replaceExisting: false,
+      autoRename: true,
+      unavailableNames: const <String>['Qwen'],
+    );
+
+    expect(result.model.modelId, 'Qwen (2)');
+  });
+
+  test('renameImportedModel forwards the current id and new name', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          expect(call.method, 'renameImportedModel');
+          expect(call.arguments, <String, Object?>{
+            'modelId': 'qwen',
+            'newName': 'Qwen 3',
+          });
+          return <String, Object?>{
+            'modelId': 'Qwen 3',
+            'modelKey': 'Qwen 3',
+            'displayName': 'Qwen 3',
+            'modelDirPath': '/models/Qwen 3',
+            'configPath': '/models/Qwen 3/config.json',
+            'sizeBytes': 100,
+            'importedAt': 1,
+            'isActive': false,
+          };
+        });
+
+    final model = await platform.renameImportedModel('qwen', 'Qwen 3');
+
+    expect(model.modelId, 'Qwen 3');
+    expect(model.displayName, 'Qwen 3');
+  });
+
   test('preserves stable native error codes and details', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {

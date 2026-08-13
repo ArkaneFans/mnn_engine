@@ -21,7 +21,7 @@
 - 通过 Android Storage Access Framework 导入完整 MNN 模型目录。
 - 支持从宿主应用私有存储直接导入已经下载完成的模型。
 - 加载前校验 `config.json` 以及模型、权重、embedding、tokenizer 等引用文件。
-- 支持模型导入、列表、加载、卸载和删除。
+- 支持模型导入、列表、加载、卸载、重命名和删除；模型目录名同时作为运行时及 API 模型 ID。
 - 使用 Android 前台 Service 管理模型 Session 与 API Server 生命周期。
 - 提供运行状态快照、状态事件流、日志快照和实时日志流。
 - 可监听 loopback 或全部可用 IPv4 网络接口。
@@ -52,7 +52,7 @@
 
 ```yaml
 dependencies:
-  mnn_engine: ^0.0.1
+  mnn_engine: ^0.0.2
 ```
 
 然后执行：

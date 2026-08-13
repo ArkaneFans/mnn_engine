@@ -27,6 +27,16 @@ class MnnEngine {
         replaceExisting: replaceExisting,
       );
 
+  Future<MnnModelImportResult> importModelDirectoryWithResult({
+    bool replaceExisting = false,
+    bool autoRename = true,
+    List<String> unavailableNames = const <String>[],
+  }) => MnnEnginePlatform.instance.importModelDirectoryWithResult(
+    replaceExisting: replaceExisting,
+    autoRename: autoRename,
+    unavailableNames: unavailableNames,
+  );
+
   /// Imports a model directory the app already owns (e.g. a finished
   /// download in private storage) without going through the SAF picker.
   Future<MnnModelInfo> importModelFromPath(
@@ -37,8 +47,25 @@ class MnnEngine {
     replaceExisting: replaceExisting,
   );
 
+  Future<MnnModelImportResult> importModelFromPathWithResult(
+    String directoryPath, {
+    bool replaceExisting = false,
+    bool autoRename = true,
+    List<String> unavailableNames = const <String>[],
+  }) => MnnEnginePlatform.instance.importModelFromPathWithResult(
+    directoryPath,
+    replaceExisting: replaceExisting,
+    autoRename: autoRename,
+    unavailableNames: unavailableNames,
+  );
+
   Future<void> deleteImportedModel(String modelId) =>
       MnnEnginePlatform.instance.deleteImportedModel(modelId);
+
+  /// Renames the model directory and therefore changes its runtime model ID.
+  /// The model and API server must be stopped before this operation.
+  Future<MnnModelInfo> renameImportedModel(String modelId, String newName) =>
+      MnnEnginePlatform.instance.renameImportedModel(modelId, newName);
 
   Future<MnnModelInfo> loadModel(String modelId) =>
       MnnEnginePlatform.instance.loadModel(modelId);

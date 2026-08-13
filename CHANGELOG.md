@@ -1,3 +1,9 @@
+## 0.0.2
+
+- Use the imported model directory name as the MNN runtime and API model ID.
+- Add model-directory renaming with case-insensitive duplicate-name checks.
+- Add import-result APIs with optional automatic conflict-free model naming.
+
 ## 0.0.1
 
 - Bundle verified Android arm64 native libraries for pub.dev consumers.

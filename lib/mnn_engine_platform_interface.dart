@@ -21,6 +21,11 @@ abstract class MnnEnginePlatform extends PlatformInterface {
   Future<String> getTestRootPath();
   Future<List<MnnModelInfo>> listImportedModels();
   Future<MnnModelInfo> importModelDirectory({required bool replaceExisting});
+  Future<MnnModelImportResult> importModelDirectoryWithResult({
+    required bool replaceExisting,
+    required bool autoRename,
+    required List<String> unavailableNames,
+  });
 
   /// Imports a model directory the app already owns (e.g. a finished
   /// download in private storage) without going through the SAF picker.
@@ -28,7 +33,14 @@ abstract class MnnEnginePlatform extends PlatformInterface {
     String directoryPath, {
     required bool replaceExisting,
   });
+  Future<MnnModelImportResult> importModelFromPathWithResult(
+    String directoryPath, {
+    required bool replaceExisting,
+    required bool autoRename,
+    required List<String> unavailableNames,
+  });
   Future<void> deleteImportedModel(String modelId);
+  Future<MnnModelInfo> renameImportedModel(String modelId, String newName);
   Future<MnnModelInfo> loadModel(String modelId);
   Future<void> unloadModel();
 

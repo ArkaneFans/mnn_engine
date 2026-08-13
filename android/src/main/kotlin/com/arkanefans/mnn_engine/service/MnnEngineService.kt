@@ -156,25 +156,60 @@ class MnnEngineService : Service() {
     fun importModelDirectory(treeUri: Uri, replaceExisting: Boolean): Map<String, Any?> {
         requireServerStopped("import a model")
         val activeModelId = snapshot.activeModel?.get("modelId") as String?
-        return try {
+        return runModelImport {
             importer.import(treeUri, replaceExisting, activeModelId).toMap()
-        } catch (error: MnnEngineOperationException) {
-            throw error
-        } catch (error: IllegalArgumentException) {
-            val code = if (error.message.orEmpty().contains("config.json")) {
-                "model_config_not_found"
-            } else {
-                "model_path_not_readable"
-            }
-            throw MnnEngineOperationException(code, error.message ?: "Model import failed.", cause = error)
+        }
+    }
+
+    fun importModelDirectoryWithResult(
+        treeUri: Uri,
+        replaceExisting: Boolean,
+        autoRename: Boolean,
+        unavailableNames: Collection<String>,
+    ): Map<String, Any?> {
+        requireServerStopped("import a model")
+        val activeModelId = snapshot.activeModel?.get("modelId") as String?
+        return runModelImport {
+            importer.importWithResult(
+                treeUri = treeUri,
+                replaceExisting = replaceExisting,
+                activeModelId = activeModelId,
+                autoRename = autoRename,
+                unavailableNames = unavailableNames,
+            ).toMap()
         }
     }
 
     fun importModelFromPath(directoryPath: String, replaceExisting: Boolean): Map<String, Any?> {
         requireServerStopped("import a model")
         val activeModelId = snapshot.activeModel?.get("modelId") as String?
-        return try {
+        return runModelImport {
             importer.importFromPath(java.io.File(directoryPath), replaceExisting, activeModelId).toMap()
+        }
+    }
+
+    fun importModelFromPathWithResult(
+        directoryPath: String,
+        replaceExisting: Boolean,
+        autoRename: Boolean,
+        unavailableNames: Collection<String>,
+    ): Map<String, Any?> {
+        requireServerStopped("import a model")
+        val activeModelId = snapshot.activeModel?.get("modelId") as String?
+        return runModelImport {
+            importer.importFromPathWithResult(
+                sourceDir = java.io.File(directoryPath),
+                replaceExisting = replaceExisting,
+                activeModelId = activeModelId,
+                autoRename = autoRename,
+                unavailableNames = unavailableNames,
+            ).toMap()
+        }
+    }
+
+    private fun runModelImport(operation: () -> Map<String, Any?>): Map<String, Any?> {
+        return try {
+            operation()
         } catch (error: MnnEngineOperationException) {
             throw error
         } catch (error: IllegalArgumentException) {
@@ -183,7 +218,11 @@ class MnnEngineService : Service() {
             } else {
                 "model_path_not_readable"
             }
-            throw MnnEngineOperationException(code, error.message ?: "Model import failed.", cause = error)
+            throw MnnEngineOperationException(
+                code,
+                error.message ?: "Model import failed.",
+                cause = error,
+            )
         }
     }
 
@@ -192,6 +231,33 @@ class MnnEngineService : Service() {
         val activeModelId = snapshot.activeModel?.get("modelId") as String?
         repository.delete(modelId, activeModelId)
         logStore.info(TAG, "Deleted imported model: $modelId")
+    }
+
+    fun renameImportedModel(modelId: String, newName: String): Map<String, Any?> {
+        requireServerStopped("rename a model")
+        val activeModelId = snapshot.activeModel?.get("modelId") as String?
+        return try {
+            repository.rename(modelId, newName, activeModelId).toMap().also {
+                logStore.info(TAG, "Renamed imported model: $modelId -> $newName")
+            }
+        } catch (error: MnnEngineOperationException) {
+            throw error
+        } catch (error: IllegalArgumentException) {
+            val message = error.message ?: "Failed to rename the model."
+            val code = when {
+                message.contains("not found", ignoreCase = true) -> "model_not_found"
+                message.contains("already exists", ignoreCase = true) -> "model_name_exists"
+                message.contains("active model", ignoreCase = true) -> "model_active"
+                else -> "invalid_model_name"
+            }
+            throw MnnEngineOperationException(code, message, cause = error)
+        } catch (error: Throwable) {
+            throw MnnEngineOperationException(
+                "model_rename_failed",
+                error.message ?: "Failed to rename the model.",
+                cause = error,
+            )
+        }
     }
 
     fun loadModel(modelId: String): Map<String, Any?> {

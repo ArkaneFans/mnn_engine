@@ -63,6 +63,19 @@ class MethodChannelMnnEngine extends MnnEnginePlatform {
   );
 
   @override
+  Future<MnnModelImportResult> importModelDirectoryWithResult({
+    required bool replaceExisting,
+    required bool autoRename,
+    required List<String> unavailableNames,
+  }) async => MnnModelImportResult.fromMap(
+    await _invoke<Object?>('importModelDirectoryWithResult', {
+      'replaceExisting': replaceExisting,
+      'autoRename': autoRename,
+      'unavailableNames': unavailableNames,
+    }),
+  );
+
+  @override
   Future<MnnModelInfo> importModelFromPath(
     String directoryPath, {
     required bool replaceExisting,
@@ -74,8 +87,34 @@ class MethodChannelMnnEngine extends MnnEnginePlatform {
   );
 
   @override
+  Future<MnnModelImportResult> importModelFromPathWithResult(
+    String directoryPath, {
+    required bool replaceExisting,
+    required bool autoRename,
+    required List<String> unavailableNames,
+  }) async => MnnModelImportResult.fromMap(
+    await _invoke<Object?>('importModelFromPathWithResult', {
+      'directoryPath': directoryPath,
+      'replaceExisting': replaceExisting,
+      'autoRename': autoRename,
+      'unavailableNames': unavailableNames,
+    }),
+  );
+
+  @override
   Future<void> deleteImportedModel(String modelId) =>
       _invokeVoid('deleteImportedModel', {'modelId': modelId});
+
+  @override
+  Future<MnnModelInfo> renameImportedModel(
+    String modelId,
+    String newName,
+  ) async => MnnModelInfo.fromMap(
+    await _invoke<Object?>('renameImportedModel', {
+      'modelId': modelId,
+      'newName': newName,
+    }),
+  );
 
   @override
   Future<MnnModelInfo> loadModel(String modelId) async => MnnModelInfo.fromMap(

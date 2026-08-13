@@ -1,6 +1,6 @@
 name: mnn_engine
 description: Run MNN LLMs on Android and expose an on-device OpenAI-compatible API server from Flutter.
-version: 0.0.1
+version: 0.0.2
 homepage: https://github.com/ArkaneFans/mnn_engine
 repository: https://github.com/ArkaneFans/mnn_engine
 issue_tracker: https://github.com/ArkaneFans/mnn_engine/issues

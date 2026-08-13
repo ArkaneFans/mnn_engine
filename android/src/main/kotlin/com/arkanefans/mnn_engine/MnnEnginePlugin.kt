@@ -38,6 +38,9 @@ class MnnEnginePlugin :
     private var activityBinding: ActivityPluginBinding? = null
     private var pendingImportResult: MethodChannel.Result? = null
     private var pendingReplaceExisting = true
+    private var pendingAutoRename = false
+    private var pendingUnavailableNames = emptyList<String>()
+    private var pendingReturnsImportResult = false
     private val ioExecutor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -106,6 +109,13 @@ class MnnEnginePlugin :
                     result,
                     call.argument<Boolean>("replaceExisting") ?: true,
                 )
+                "importModelDirectoryWithResult" -> startModelDirectoryPicker(
+                    result = result,
+                    replaceExisting = call.argument<Boolean>("replaceExisting") ?: false,
+                    autoRename = call.argument<Boolean>("autoRename") ?: true,
+                    unavailableNames = call.argument<List<String>>("unavailableNames").orEmpty(),
+                    returnsImportResult = true,
+                )
                 "importModelFromPath" -> {
                     val directoryPath = call.argument<String>("directoryPath")
                         ?: throw IllegalArgumentException("directoryPath is required.")
@@ -116,6 +126,18 @@ class MnnEnginePlugin :
                         )
                     }
                 }
+                "importModelFromPathWithResult" -> {
+                    val directoryPath = call.argument<String>("directoryPath")
+                        ?: throw IllegalArgumentException("directoryPath is required.")
+                    executeIo(result) {
+                        currentService.importModelFromPathWithResult(
+                            directoryPath = directoryPath,
+                            replaceExisting = call.argument<Boolean>("replaceExisting") ?: false,
+                            autoRename = call.argument<Boolean>("autoRename") ?: true,
+                            unavailableNames = call.argument<List<String>>("unavailableNames").orEmpty(),
+                        )
+                    }
+                }
                 "deleteImportedModel" -> {
                     val modelId = call.argument<String>("modelId")
                         ?: throw IllegalArgumentException("modelId is required.")
@@ -123,6 +145,13 @@ class MnnEnginePlugin :
                         currentService.deleteImportedModel(modelId)
                         null
                     }
+                }
+                "renameImportedModel" -> {
+                    val modelId = call.argument<String>("modelId")
+                        ?: throw IllegalArgumentException("modelId is required.")
+                    val newName = call.argument<String>("newName")
+                        ?: throw IllegalArgumentException("newName is required.")
+                    executeIo(result) { currentService.renameImportedModel(modelId, newName) }
                 }
                 "loadModel" -> {
                     val modelId = call.argument<String>("modelId")
@@ -191,6 +220,9 @@ class MnnEnginePlugin :
     private fun startModelDirectoryPicker(
         result: MethodChannel.Result,
         replaceExisting: Boolean,
+        autoRename: Boolean = false,
+        unavailableNames: List<String> = emptyList(),
+        returnsImportResult: Boolean = false,
     ) {
         val activity = activityBinding?.activity
         if (activity == null) {
@@ -203,6 +235,9 @@ class MnnEnginePlugin :
         }
         pendingImportResult = result
         pendingReplaceExisting = replaceExisting
+        pendingAutoRename = autoRename
+        pendingUnavailableNames = unavailableNames
+        pendingReturnsImportResult = returnsImportResult
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
             addFlags(
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or
@@ -218,6 +253,7 @@ class MnnEnginePlugin :
         val result = pendingImportResult ?: return true
         pendingImportResult = null
         if (resultCode != Activity.RESULT_OK || data?.data == null) {
+            clearPendingImportOptions()
             result.error("import_cancelled", "Model directory selection was cancelled.", null)
             return true
         }
@@ -229,10 +265,24 @@ class MnnEnginePlugin :
             )
         }
         val replaceExisting = pendingReplaceExisting
+        val autoRename = pendingAutoRename
+        val unavailableNames = pendingUnavailableNames
+        val returnsImportResult = pendingReturnsImportResult
+        clearPendingImportOptions()
         ioExecutor.execute {
             val operation = runCatching {
-                service?.importModelDirectory(treeUri, replaceExisting)
+                val currentService = service
                     ?: throw IllegalStateException("MNN engine service is not connected.")
+                if (returnsImportResult) {
+                    currentService.importModelDirectoryWithResult(
+                        treeUri = treeUri,
+                        replaceExisting = replaceExisting,
+                        autoRename = autoRename,
+                        unavailableNames = unavailableNames,
+                    )
+                } else {
+                    currentService.importModelDirectory(treeUri, replaceExisting)
+                }
             }
             mainHandler.post {
                 operation.onSuccess(result::success).onFailure { error ->
@@ -297,6 +347,7 @@ class MnnEnginePlugin :
         pendingCalls.clear()
         pendingImportResult?.error("plugin_detached", "Plugin detached during model import.", null)
         pendingImportResult = null
+        clearPendingImportOptions()
         ioExecutor.shutdownNow()
     }
 
@@ -320,6 +371,13 @@ class MnnEnginePlugin :
     private fun detachActivity() {
         activityBinding?.removeActivityResultListener(this)
         activityBinding = null
+    }
+
+    private fun clearPendingImportOptions() {
+        pendingReplaceExisting = true
+        pendingAutoRename = false
+        pendingUnavailableNames = emptyList()
+        pendingReturnsImportResult = false
     }
 
     private val runtimeStreamHandler = object : EventChannel.StreamHandler {

@@ -97,6 +97,27 @@ class MnnModelInfo {
   final List<String> validationWarnings;
 }
 
+class MnnModelImportResult {
+  const MnnModelImportResult({
+    required this.requestedModelName,
+    required this.model,
+  });
+
+  factory MnnModelImportResult.fromMap(Object? value) {
+    final map = _map(value);
+    return MnnModelImportResult(
+      requestedModelName: map['requestedModelName'] as String? ?? '',
+      model: MnnModelInfo.fromMap(map['model']),
+    );
+  }
+
+  final String requestedModelName;
+  final MnnModelInfo model;
+
+  bool get wasRenamed =>
+      requestedModelName.toLowerCase() != model.modelKey.toLowerCase();
+}
+
 class MnnServerInfo {
   const MnnServerInfo({
     required this.running,

@@ -17,7 +17,22 @@ class MnnModelImporter(
     private val repository: MnnTestModelRepository,
     private val logStore: MnnLogStore,
 ) {
-    fun import(treeUri: Uri, replaceExisting: Boolean, activeModelId: String?): MnnModelInfo {
+    fun import(treeUri: Uri, replaceExisting: Boolean, activeModelId: String?): MnnModelInfo =
+        importWithResult(
+            treeUri = treeUri,
+            replaceExisting = replaceExisting,
+            activeModelId = activeModelId,
+            autoRename = false,
+            unavailableNames = emptyList(),
+        ).model
+
+    fun importWithResult(
+        treeUri: Uri,
+        replaceExisting: Boolean,
+        activeModelId: String?,
+        autoRename: Boolean,
+        unavailableNames: Collection<String>,
+    ): MnnModelImportResult {
         directories.ensureCreated()
         val source = DocumentFile.fromTreeUri(context, treeUri)
             ?: throw IllegalArgumentException("Unable to open the selected directory.")
@@ -28,7 +43,14 @@ class MnnModelImporter(
         logStore.info(TAG, "Importing ${source.name ?: treeUri} into ${staging.absolutePath}")
         try {
             copyDirectoryContents(source, staging)
-            return commit(staging, source.name, replaceExisting, activeModelId)
+            return commit(
+                staging = staging,
+                sourceName = source.name,
+                replaceExisting = replaceExisting,
+                activeModelId = activeModelId,
+                autoRename = autoRename,
+                unavailableNames = unavailableNames,
+            )
         } catch (error: Throwable) {
             staging.deleteRecursively()
             logStore.error(TAG, "Model import failed", error)
@@ -60,7 +82,22 @@ class MnnModelImporter(
     /// app's private storage), bypassing the SAF picker. Shares the staging,
     /// validation and commit path with [import] so both entry points produce
     /// identical on-disk layouts.
-    fun importFromPath(sourceDir: File, replaceExisting: Boolean, activeModelId: String?): MnnModelInfo {
+    fun importFromPath(sourceDir: File, replaceExisting: Boolean, activeModelId: String?): MnnModelInfo =
+        importFromPathWithResult(
+            sourceDir = sourceDir,
+            replaceExisting = replaceExisting,
+            activeModelId = activeModelId,
+            autoRename = false,
+            unavailableNames = emptyList(),
+        ).model
+
+    fun importFromPathWithResult(
+        sourceDir: File,
+        replaceExisting: Boolean,
+        activeModelId: String?,
+        autoRename: Boolean,
+        unavailableNames: Collection<String>,
+    ): MnnModelImportResult {
         directories.ensureCreated()
         require(sourceDir.isDirectory && sourceDir.canRead()) { "Source directory is not readable." }
 
@@ -69,7 +106,14 @@ class MnnModelImporter(
         logStore.info(TAG, "Importing ${sourceDir.absolutePath} into ${staging.absolutePath}")
         try {
             copyLocalDirectoryContents(sourceDir, staging)
-            return commit(staging, sourceDir.name, replaceExisting, activeModelId)
+            return commit(
+                staging = staging,
+                sourceName = sourceDir.name,
+                replaceExisting = replaceExisting,
+                activeModelId = activeModelId,
+                autoRename = autoRename,
+                unavailableNames = unavailableNames,
+            )
         } catch (error: Throwable) {
             staging.deleteRecursively()
             logStore.error(TAG, "Model import failed", error)
@@ -96,15 +140,34 @@ class MnnModelImporter(
         sourceName: String?,
         replaceExisting: Boolean,
         activeModelId: String?,
-    ): MnnModelInfo {
+        autoRename: Boolean,
+        unavailableNames: Collection<String>,
+    ): MnnModelImportResult {
         validator.validate(staging)
-        val modelKey = resolveModelKey(staging, sourceName)
+        val requestedModelName = resolveModelKey(staging, sourceName)
+        val modelKey = if (autoRename && !replaceExisting) {
+            MnnModelNameAllocator.nextAvailable(
+                requestedModelName = requestedModelName,
+                unavailableNames = buildList {
+                    repository.list(activeModelId).forEach { add(it.modelId) }
+                    directories.modelsDir.listFiles().orEmpty()
+                        .filter(File::isDirectory)
+                        .forEach { add(it.name) }
+                    addAll(unavailableNames)
+                },
+            )
+        } else {
+            requestedModelName
+        }
         val finalDir = directories.modelDir(modelKey)
-        val existing = repository.modelInfo(finalDir, activeModelId)
+        val existing = repository.list(activeModelId)
+            .firstOrNull { it.modelId.equals(modelKey, ignoreCase = true) }
         if (existing != null) {
             require(replaceExisting) { "Model already exists: ${existing.modelId}" }
             require(existing.modelId != activeModelId) { "The active model cannot be replaced." }
-            check(finalDir.deleteRecursively()) { "Failed to replace existing model." }
+            check(File(existing.modelDirPath).deleteRecursively()) { "Failed to replace existing model." }
+        } else {
+            require(!finalDir.exists()) { "Model already exists: $modelKey" }
         }
         if (!staging.renameTo(finalDir)) {
             check(staging.copyRecursively(finalDir, overwrite = true)) {
@@ -116,7 +179,10 @@ class MnnModelImporter(
         val result = repository.modelInfo(finalDir, activeModelId)
             ?: throw IllegalStateException("Imported model could not be scanned.")
         logStore.info(TAG, "Imported ${result.modelId} (${result.sizeBytes} bytes)")
-        return result
+        return MnnModelImportResult(
+            requestedModelName = requestedModelName,
+            model = result,
+        )
     }
 
     private fun resolveModelKey(staging: File, sourceName: String?): String {
@@ -135,16 +201,17 @@ class MnnModelImporter(
             ?.takeIf(String::isNotBlank)
             ?: sourceName
             ?: "mnn-model-${UUID.randomUUID().toString().take(8)}"
-        return sanitize(displayName)
+        return normalizeModelName(displayName)
     }
 
-    private fun sanitize(value: String): String {
-        val normalized = value.lowercase()
-            .replace(Regex("[^a-z0-9]+"), "-")
-            .trim('-')
+    private fun normalizeModelName(value: String): String {
+        val normalized = value.trim()
+            .replace(Regex("[\\\\/\\u0000-\\u001F]"), "-")
             .take(80)
-            .trimEnd('-')
-        return normalized.ifBlank { "mnn-model-${UUID.randomUUID().toString().take(8)}" }
+            .trim()
+        val fallback = "mnn-model-${UUID.randomUUID().toString().take(8)}"
+        return normalized.ifBlank { fallback }
+            .let { name -> if (name == "." || name == "..") fallback else name }
     }
 
     private fun isSafeName(name: String): Boolean {
