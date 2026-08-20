@@ -1,3 +1,8 @@
+## Unreleased
+
+- Align multi-turn tool-call messages and completion responses with `llama-server`.
+- Support both JSON and tagged-parameter MNN tool-call output formats.
+
 ## 0.0.2
 
 - Use the imported model directory name as the MNN runtime and API model ID.

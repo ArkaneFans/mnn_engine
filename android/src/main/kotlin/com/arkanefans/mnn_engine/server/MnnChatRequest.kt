@@ -132,39 +132,38 @@ internal object MnnChatRequestParser {
         val item = element.asJsonObject.deepCopy()
         val role = item.string("role") ?: throw IllegalArgumentException("Message role is required.")
         require(role in allowedRoles) { "Unsupported message role: $role" }
-        require(item.has("content")) { "Message content is required." }
-        val content = item.get("content")
+        val hasContent = item.has("content")
+        val toolCalls = item.get("tool_calls")
+        if (role == "assistant") {
+            require(hasContent || toolCalls != null) {
+                "Assistant message must contain either content or tool_calls."
+            }
+        } else {
+            require(hasContent) { "All non-assistant messages must contain content." }
+        }
+        if (hasContent) validateContent(item.get("content"))
         when (role) {
-            "user", "system" -> validateContent(content, allowNull = false)
             "tool" -> {
-                require(content.isJsonPrimitive && content.asJsonPrimitive.isString) {
-                    "Tool message content must be a string."
+                item.optionalString("tool_call_id")?.let {
+                    require(it.isNotBlank()) { "Tool message tool_call_id must not be empty." }
                 }
-                require(item.string("tool_call_id")?.isNotBlank() == true) {
-                    "Tool message tool_call_id is required."
-                }
+                item.optionalString("name")
             }
             "assistant" -> {
-                validateContent(content, allowNull = true)
-                val toolCalls = item.get("tool_calls")
-                if (toolCalls != null && !toolCalls.isJsonNull) validateToolCalls(toolCalls)
+                if (toolCalls != null) validateToolCalls(toolCalls)
+                item.optionalString("reasoning_content")
             }
         }
         return item
     }
 
-    private fun validateContent(element: JsonElement, allowNull: Boolean) {
-        if (element.isJsonNull) {
-            require(allowNull) { "Message content must not be null." }
-            return
-        }
+    private fun validateContent(element: JsonElement) {
+        if (element.isJsonNull) return
         if (element.isJsonPrimitive) {
             require(element.asJsonPrimitive.isString) { "Message content must be a string or content array." }
-            require(element.asString.isNotEmpty()) { "Message content must not be empty." }
             return
         }
         require(element.isJsonArray) { "Message content must be a string or content array." }
-        require(element.asJsonArray.size() > 0) { "Message content array must not be empty." }
         element.asJsonArray.forEach { part ->
             require(part.isJsonObject) { "Each content part must be an object." }
             val type = part.asJsonObject.string("type")
@@ -196,19 +195,31 @@ internal object MnnChatRequestParser {
         element.asJsonArray.forEach { call ->
             require(call.isJsonObject) { "Each tool call must be an object." }
             val item = call.asJsonObject
-            require(item.string("id")?.isNotBlank() == true) { "tool_call id is required." }
+            item.optionalString("id")?.let {
+                require(it.isNotBlank()) { "tool_call id must not be empty." }
+            }
             require(item.string("type") == "function") { "Only function tool calls are supported." }
             val function = item.getAsJsonObject("function")
                 ?: throw IllegalArgumentException("tool_call.function is required.")
             validateFunctionName(function.string("name"))
-            require(function.string("arguments") != null) { "tool_call function arguments must be a string." }
+            val arguments = function.get("arguments")
+                ?: throw IllegalArgumentException("tool_call function arguments are required.")
+            require(arguments.isJsonObject || arguments.isJsonPrimitive && arguments.asJsonPrimitive.isString) {
+                "tool_call function arguments must be a JSON object or a string containing one."
+            }
+            if (arguments.isJsonPrimitive) {
+                val parsed = runCatching { JsonParser.parseString(arguments.asString) }.getOrNull()
+                require(parsed?.isJsonObject == true) {
+                    "tool_call function arguments string must contain a JSON object."
+                }
+            }
         }
     }
 
     private fun parseTools(element: JsonElement?): JsonArray {
         if (element == null || element.isJsonNull) return JsonArray()
         require(element.isJsonArray) { "tools must be an array." }
-        require(element.asJsonArray.size() in 1..MAX_TOOLS) { "tools must contain 1 to $MAX_TOOLS items." }
+        require(element.asJsonArray.size() <= MAX_TOOLS) { "tools must contain at most $MAX_TOOLS items." }
         val tools = element.asJsonArray.deepCopy()
         val names = mutableSetOf<String>()
         tools.forEach { tool ->
@@ -236,10 +247,16 @@ internal object MnnChatRequestParser {
             return MnnToolChoice(if (tools.size() > 0) MnnToolChoiceMode.AUTO else MnnToolChoiceMode.NONE)
         }
         if (element.isJsonPrimitive) {
+            require(element.asJsonPrimitive.isString) {
+                "tool_choice must be none, auto, required, or a function object."
+            }
             return when (element.asString) {
                 "none" -> MnnToolChoice(MnnToolChoiceMode.NONE)
                 "auto" -> MnnToolChoice(MnnToolChoiceMode.AUTO)
-                "required" -> MnnToolChoice(MnnToolChoiceMode.REQUIRED)
+                "required" -> {
+                    require(tools.size() > 0) { "tool_choice required needs at least one tool." }
+                    MnnToolChoice(MnnToolChoiceMode.REQUIRED)
+                }
                 else -> throw IllegalArgumentException("Unsupported tool_choice: ${element.asString}")
             }
         }
@@ -262,6 +279,13 @@ internal object MnnChatRequestParser {
 
     private fun JsonObject.string(key: String): String? {
         val value = get(key) ?: return null
+        require(value.isJsonPrimitive && value.asJsonPrimitive.isString) { "$key must be a string." }
+        return value.asString
+    }
+
+    private fun JsonObject.optionalString(key: String): String? {
+        val value = get(key) ?: return null
+        if (value.isJsonNull) return null
         require(value.isJsonPrimitive && value.asJsonPrimitive.isString) { "$key must be a string." }
         return value.asString
     }

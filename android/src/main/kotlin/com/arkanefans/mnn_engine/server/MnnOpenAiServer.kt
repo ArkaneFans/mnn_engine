@@ -226,7 +226,7 @@ class MnnOpenAiServer(
         val output = StringBuilder()
         val metrics = generate(request, messages) { token -> output.append(token); false }
         val parsed = parseCompletion(request, model, output.toString())
-        val finish = if (parsed.toolCalls.isNotEmpty()) "tool_calls" else normalizeFinishReason(metrics.finishReason)
+        val finish = completionFinishReason(metrics.finishReason, parsed.toolCalls.isNotEmpty())
         respondJson(HttpStatusCode.OK, JsonObject().apply {
             addProperty("id", "chatcmpl-${UUID.randomUUID()}")
             addProperty("object", "chat.completion")
@@ -267,7 +267,7 @@ class MnnOpenAiServer(
                     reasoningContent = delta.reasoningContent.ifEmpty { null },
                 ).toString())
             }
-            send(chunk(completionId, created, model.modelId, role = "assistant").toString())
+            send(initialChunk(completionId, created, model.modelId).toString())
             val output = StringBuilder()
             val reasoningParser = if (request.hasTools) {
                 null
@@ -330,11 +330,10 @@ class MnnOpenAiServer(
                     completionId,
                     created,
                     model.modelId,
-                    finishReason = if (parsed?.toolCalls?.isNotEmpty() == true) {
-                        "tool_calls"
-                    } else {
-                        normalizeFinishReason(metrics.finishReason)
-                    },
+                    finishReason = completionFinishReason(
+                        metrics.finishReason,
+                        parsed?.toolCalls?.isNotEmpty() == true,
+                    ),
                 ).toString())
                 send("[DONE]")
             }
@@ -372,7 +371,7 @@ class MnnOpenAiServer(
 
     private fun assistantMessage(parsed: MnnParsedCompletion) = JsonObject().apply {
         addProperty("role", "assistant")
-        if (parsed.content == null) add("content", com.google.gson.JsonNull.INSTANCE) else addProperty("content", parsed.content)
+        addProperty("content", parsed.content.orEmpty())
         parsed.reasoningContent?.let { addProperty("reasoning_content", it) }
         if (parsed.toolCalls.isNotEmpty()) add("tool_calls", toolCalls(parsed.toolCalls))
     }
@@ -387,6 +386,13 @@ class MnnOpenAiServer(
     private fun toolCallsChunk(id: String, created: Long, model: String, calls: List<MnnToolCall>) = chunk(id, created, model).apply {
         getAsJsonArray("choices").get(0).asJsonObject.getAsJsonObject("delta").add("tool_calls", toolCalls(calls).also { calls.forEachIndexed { index, call -> it.get(index).asJsonObject.addProperty("index", index) } })
     }
+
+    private fun initialChunk(id: String, created: Long, model: String) =
+        chunk(id, created, model, role = "assistant").apply {
+            getAsJsonArray("choices").get(0).asJsonObject
+                .getAsJsonObject("delta")
+                .add("content", com.google.gson.JsonNull.INSTANCE)
+        }
 
     private fun chunk(
         id: String,
@@ -417,6 +423,12 @@ class MnnOpenAiServer(
     private suspend fun io.ktor.server.routing.RoutingContext.respondOpenAiError(status: HttpStatusCode, code: String, message: String) = respondJson(status, JsonObject().apply { add("error", JsonObject().apply { addProperty("message", message); addProperty("type", "invalid_request_error"); addProperty("code", code) }) })
 
     private fun normalizeFinishReason(reason: String): String = when (reason) { "length" -> "length"; else -> "stop" }
+
+    private fun completionFinishReason(reason: String, hasToolCalls: Boolean): String = when {
+        reason == "length" -> "length"
+        hasToolCalls -> "tool_calls"
+        else -> normalizeFinishReason(reason)
+    }
 
     private fun constantTimeEquals(actual: String, expected: String): Boolean {
         val a = actual.toByteArray(Charsets.UTF_8); val b = expected.toByteArray(Charsets.UTF_8)

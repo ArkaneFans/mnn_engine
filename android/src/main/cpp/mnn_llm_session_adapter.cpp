@@ -126,21 +126,37 @@ ChatMessages parseMessages(const std::string& messagesJson) {
     for (const auto& item : root) {
         const std::string role = item.value("role", "");
         if (role.empty()) throw std::invalid_argument("message role is required");
-        if (role == "assistant" && item.contains("tool_calls") && item["tool_calls"].is_array()) {
+        const bool hasComplexFields = item.contains("tool_calls") ||
+                item.contains("reasoning_content") || item.contains("tool_call_id") || item.contains("name");
+        if (hasComplexFields) {
             auto complex = item;
-            for (auto& tool_call : complex["tool_calls"]) {
-                if (!tool_call.is_object() || !tool_call.contains("function")) {
-                    throw std::invalid_argument("assistant tool_calls contains an invalid call");
+            if (!complex.contains("content") || complex["content"].is_null()) {
+                complex["content"] = "";
+            }
+            if (complex.contains("tool_calls")) {
+                if (!complex["tool_calls"].is_array()) {
+                    throw std::invalid_argument("assistant tool_calls must be an array");
                 }
-                auto& function = tool_call["function"];
-                if (function.contains("arguments") && function["arguments"].is_string()) {
-                    try {
-                        auto arguments = json::parse(function["arguments"].get<std::string>());
-                        if (!arguments.is_object()) {
+                for (auto& tool_call : complex["tool_calls"]) {
+                    if (!tool_call.is_object() || !tool_call.contains("function") ||
+                        !tool_call["function"].is_object()) {
+                        throw std::invalid_argument("assistant tool_calls contains an invalid call");
+                    }
+                    auto& function = tool_call["function"];
+                    if (!function.contains("arguments")) {
+                        throw std::invalid_argument("tool_call arguments are required");
+                    }
+                    if (function["arguments"].is_string()) {
+                        try {
+                            auto arguments = json::parse(function["arguments"].get<std::string>());
+                            if (!arguments.is_object()) {
+                                throw std::invalid_argument("tool_call arguments must contain a JSON object");
+                            }
+                            function["arguments"] = std::move(arguments);
+                        } catch (const std::exception&) {
                             throw std::invalid_argument("tool_call arguments must contain a JSON object");
                         }
-                        function["arguments"] = std::move(arguments);
-                    } catch (const std::exception&) {
+                    } else if (!function["arguments"].is_object()) {
                         throw std::invalid_argument("tool_call arguments must contain a JSON object");
                     }
                 }

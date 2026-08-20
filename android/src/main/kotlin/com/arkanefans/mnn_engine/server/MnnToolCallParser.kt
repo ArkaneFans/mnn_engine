@@ -68,7 +68,31 @@ internal object MnnToolCallParser {
         )
     }
 
-    private fun parseBlock(block: String, allowedNames: Set<String>): MnnToolCall? {
+    private fun parseBlock(block: String, allowedNames: Set<String>): MnnToolCall? =
+        parseJsonBlock(block, allowedNames) ?: parseTaggedBlock(block, allowedNames)
+
+    private fun parseJsonBlock(block: String, allowedNames: Set<String>): MnnToolCall? {
+        val root = runCatching { JsonParser.parseString(block.trim()).asJsonObject }.getOrNull()
+            ?: return null
+        val function = root.getAsJsonObject("function") ?: root
+        val name = function.get("name")
+            ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
+            ?.asString
+            ?: return null
+        if (!namePattern.matches(name) || name !in allowedNames) return null
+        val arguments = normalizeArguments(function.get("arguments") ?: JsonObject()) ?: return null
+        val id = root.get("id")
+            ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
+            ?.asString
+            ?.takeIf { it.isNotBlank() }
+        return MnnToolCall(
+            id = id ?: newCallId(),
+            name = name,
+            arguments = arguments.toString(),
+        )
+    }
+
+    private fun parseTaggedBlock(block: String, allowedNames: Set<String>): MnnToolCall? {
         val functionStart = block.indexOf(FUNCTION_OPEN)
         if (functionStart < 0) return null
         val nameStart = functionStart + FUNCTION_OPEN.length
@@ -78,7 +102,16 @@ internal object MnnToolCallParser {
         if (!namePattern.matches(name) || name !in allowedNames) return null
         val functionEnd = block.lastIndexOf(FUNCTION_CLOSE)
         if (functionEnd < nameEnd) return null
-        val body = block.substring(nameEnd + 1, functionEnd)
+        val body = block.substring(nameEnd + 1, functionEnd).trim()
+        if (body.isEmpty()) {
+            return MnnToolCall(newCallId(), name, JsonObject().toString())
+        }
+        runCatching { JsonParser.parseString(body) }.getOrNull()
+            ?.takeIf { it.isJsonObject }
+            ?.asJsonObject
+            ?.let { arguments ->
+                return MnnToolCall(newCallId(), name, arguments.toString())
+            }
         val arguments = JsonObject()
         var cursor = 0
         var parameterCount = 0
@@ -100,11 +133,21 @@ internal object MnnToolCallParser {
             cursor = valueEnd + PARAMETER_CLOSE.length
         }
         return MnnToolCall(
-            id = "call_mnn_${UUID.randomUUID().toString().replace("-", "").take(20)}",
+            id = newCallId(),
             name = name,
             arguments = arguments.toString(),
         )
     }
+
+    private fun normalizeArguments(element: com.google.gson.JsonElement?): JsonObject? {
+        if (element == null || element.isJsonNull) return JsonObject()
+        if (element.isJsonObject) return element.asJsonObject
+        if (!element.isJsonPrimitive || !element.asJsonPrimitive.isString) return null
+        return runCatching { JsonParser.parseString(element.asString).asJsonObject }.getOrNull()
+    }
+
+    private fun newCallId(): String =
+        "call_mnn_${UUID.randomUUID().toString().replace("-", "").take(20)}"
 
     private fun parseValue(value: String) = runCatching {
         JsonParser.parseString(value)

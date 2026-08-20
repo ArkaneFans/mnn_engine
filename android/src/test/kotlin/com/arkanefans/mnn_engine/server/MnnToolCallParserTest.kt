@@ -21,6 +21,42 @@ class MnnToolCallParserTest {
     }
 
     @Test
+    fun parsesQwenJsonToolCallFormat() {
+        val result = MnnToolCallParser.parse(
+            """<tool_call>{"name":"get_time","arguments":{"city":"Beijing","offset":8}}</tool_call>""",
+            setOf("get_time"),
+            parallel = false,
+        )
+
+        assertNull(result.content)
+        assertEquals("get_time", result.toolCalls.single().name)
+        assertEquals("{\"city\":\"Beijing\",\"offset\":8}", result.toolCalls.single().arguments)
+    }
+
+    @Test
+    fun parsesFunctionWrapperAndGeneratedId() {
+        val result = MnnToolCallParser.parse(
+            """<tool_call>{"id":"call-model-1","type":"function","function":{"name":"get_time","arguments":"{\"city\":\"Beijing\"}"}}</tool_call>""",
+            setOf("get_time"),
+            parallel = false,
+        )
+
+        assertEquals("call-model-1", result.toolCalls.single().id)
+        assertEquals("{\"city\":\"Beijing\"}", result.toolCalls.single().arguments)
+    }
+
+    @Test
+    fun parsesJsonArgumentsInsideFunctionTags() {
+        val result = MnnToolCallParser.parse(
+            """<tool_call><function=get_time>{"city":"Beijing"}</function></tool_call>""",
+            setOf("get_time"),
+            parallel = false,
+        )
+
+        assertEquals("{\"city\":\"Beijing\"}", result.toolCalls.single().arguments)
+    }
+
+    @Test
     fun clampsParallelCallsWhenDisabled() {
         val raw = """
             <tool_call><function=one><parameter=value>1</parameter></function></tool_call>

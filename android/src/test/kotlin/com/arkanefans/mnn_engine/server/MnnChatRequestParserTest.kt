@@ -84,12 +84,16 @@ class MnnChatRequestParserTest {
         assertEquals(true, request.parallelToolCalls)
         assertEquals(1, request.effectiveTools().size())
 
-        val error = assertFailsWith<IllegalArgumentException> {
+        val noTools = MnnChatRequestParser.parse(
+            """{"messages":[{"role":"user","content":"hello"}],"tools":[]}""",
+        )
+        assertEquals(false, noTools.hasTools)
+
+        assertFailsWith<IllegalArgumentException> {
             MnnChatRequestParser.parse(
-                """{"messages":[{"role":"user","content":"hello"}],"tools":[]}""",
+                """{"messages":[{"role":"user","content":"hello"}],"tools":[],"tool_choice":"required"}""",
             )
         }
-        assertTrue(error.message.orEmpty().contains("1 to"))
     }
 
     @Test
@@ -110,6 +114,43 @@ class MnnChatRequestParserTest {
     }
 
     @Test
+    fun acceptsLlamaServerToolHistoryContentVariants() {
+        val contentVariants = listOf(
+            "",
+            "\"content\":null,",
+            "\"content\":\"\",",
+        )
+
+        contentVariants.forEach { content ->
+            val request = MnnChatRequestParser.parse(
+                """{
+                  "messages":[
+                    {"role":"assistant",$content"tool_calls":[{"type":"function","function":{"name":"get_time","arguments":{"city":"Beijing"}}}]},
+                    {"role":"tool","content":"12:00"}
+                  ]
+                }""",
+            )
+
+            assertEquals(2, request.messages.size)
+            assertTrue(request.messages.first().has("tool_calls"))
+        }
+    }
+
+    @Test
+    fun rejectsStructurallyEmptyAssistantAndInvalidToolArguments() {
+        assertFailsWith<IllegalArgumentException> {
+            MnnChatRequestParser.parse(
+                """{"messages":[{"role":"assistant"}]}""",
+            )
+        }
+        assertFailsWith<IllegalArgumentException> {
+            MnnChatRequestParser.parse(
+                """{"messages":[{"role":"assistant","content":"","tool_calls":[{"type":"function","function":{"name":"get_time","arguments":"not-json"}}]}]}""",
+            )
+        }
+    }
+
+    @Test
     fun rejectsOutOfRangeParameters() {
         assertFailsWith<IllegalArgumentException> {
             MnnChatRequestParser.parse(
@@ -121,11 +162,10 @@ class MnnChatRequestParserTest {
                 """{"messages":[{"role":"user","content":"hello"}],"max_tokens":-2}""",
             )
         }
-        assertFailsWith<IllegalArgumentException> {
-            MnnChatRequestParser.parse(
-                """{"messages":[{"role":"user","content":""}]}""",
-            )
-        }
+        val emptyContent = MnnChatRequestParser.parse(
+            """{"messages":[{"role":"user","content":""}]}""",
+        )
+        assertEquals("", emptyContent.messages.single().get("content").asString)
         assertFailsWith<IllegalArgumentException> {
             MnnChatRequestParser.parse(
                 """{"messages":[{"role":"user","content":"hello"}],"temperature":"0.7"}""",
