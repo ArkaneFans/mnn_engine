@@ -3,6 +3,7 @@
 #include <string>
 
 #include "MNN/Interpreter.hpp"
+#include "mnn_backend_support.hpp"
 #include "mnn_llm_session_adapter.hpp"
 #include "nlohmann/json.hpp"
 
@@ -39,6 +40,47 @@ MnnLlmSessionAdapter* sessionFrom(jlong handle) {
 }
 
 }  // namespace
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_arkanefans_mnn_1engine_runtime_MnnNativeBridge_nativeConfigureBackends(
+        JNIEnv* env, jobject /* thiz */, jstring nativeLibraryDir, jstring dspLibraryDir) {
+    try {
+        configureMnnBackendPaths(toString(env, nativeLibraryDir), toString(env, dspLibraryDir));
+    } catch (const std::exception& error) {
+        throwJava(env, "java/lang/IllegalStateException", error.what());
+    }
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_arkanefans_mnn_1engine_runtime_MnnNativeBridge_nativeDetectHexagonArchitecture(
+        JNIEnv* env, jobject /* thiz */, jstring nativeLibraryDir) {
+    try {
+        const auto device = detectMnnHexagonArchitecture(toString(env, nativeLibraryDir));
+        const nlohmann::json result = {{"architecture", device.architecture},
+                                       {"reason", device.reason}, {"detail", device.detail}};
+        return env->NewStringUTF(result.dump().c_str());
+    } catch (const std::exception& error) {
+        throwJava(env, "java/lang/IllegalStateException", error.what());
+        return nullptr;
+    }
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_arkanefans_mnn_1engine_runtime_MnnNativeBridge_nativeGetBackendCapabilities(
+        JNIEnv* env, jobject /* thiz */) {
+    try {
+        auto result = nlohmann::json::array();
+        for (const auto& capability : probeMnnBackends()) {
+            result.push_back({{"backend", capability.backend}, {"compiled", capability.compiled},
+                              {"available", capability.available}, {"reason", capability.reason},
+                              {"detail", capability.detail}});
+        }
+        return env->NewStringUTF(result.dump().c_str());
+    } catch (const std::exception& error) {
+        throwJava(env, "java/lang/IllegalStateException", error.what());
+        return nullptr;
+    }
+}
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_arkanefans_mnn_1engine_runtime_MnnNativeSession_nativeCreate(

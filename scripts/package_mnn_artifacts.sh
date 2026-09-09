@@ -58,6 +58,9 @@ done
 
 required_symbols=(
     'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeBridge_nativeGetVersion'
+    'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeBridge_nativeConfigureBackends'
+    'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeBridge_nativeDetectHexagonArchitecture'
+    'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeBridge_nativeGetBackendCapabilities'
     'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeSession_nativeCreate'
     'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeSession_nativeGenerate'
     'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeSession_nativeCancel'
@@ -157,6 +160,9 @@ PY
 
 mv -f "${manifest_tmp}" "${manifest_path}"
 trap - EXIT
+
+python3 "${plugin_root}/scripts/hexagon_artifacts.py" package \
+    "${plugin_root}" "${MNN_HEXAGON_ARTIFACTS:-}" "${readelf_bin}"
 
 printf 'Bundled MNN native artifacts updated:\n'
 printf '  %s\n' "${bundled_dir}/libMNN.so"

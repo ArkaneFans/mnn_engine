@@ -1,6 +1,7 @@
 package com.arkanefans.mnn_engine.runtime
 
 import android.os.SystemClock
+import com.arkanefans.mnn_engine.MnnEngineOperationException
 import com.arkanefans.mnn_engine.logging.MnnLogStore
 import com.arkanefans.mnn_engine.model.MnnModelInfo
 import com.arkanefans.mnn_engine.model.MnnTestDirectories
@@ -39,15 +40,27 @@ class MnnRuntimeManager(
     @Volatile
     private var activeModel: MnnModelInfo? = null
     private var baseConfigJson: String = "{}"
+    private var backendCapabilitiesCache: List<Map<String, Any?>> = emptyList()
 
     fun activeModel(): MnnModelInfo? = activeModel
 
-    fun load(modelId: String): MnnModelInfo {
+    fun backendCapabilities(): List<Map<String, Any?>> = synchronized(lock) {
+        // The DSP probe opens/closes the shared FastRPC session. Never probe
+        // over a resident model, including the gaps between generation calls.
+        if (nativeSession == null && !generating.get()) {
+            backendCapabilitiesCache = MnnNativeBridge.backendCapabilities()
+        }
+        backendCapabilitiesCache
+    }
+
+    fun load(modelId: String, options: MnnLoadOptions = MnnLoadOptions()): MnnModelInfo {
         synchronized(lock) {
             if (generating.get()) throw GenerationBusyException()
             val model = repository.find(modelId, activeModel?.modelId)
                 ?: throw IllegalArgumentException("Model not found: $modelId")
-            activeModel?.takeIf { it.modelId == model.modelId && nativeSession != null }?.let {
+            activeModel?.takeIf {
+                it.modelId == model.modelId && it.backend == options.backend.wireName && nativeSession != null
+            }?.let {
                 logStore.info("runtime", "Reusing loaded model ${model.modelId}")
                 return it
             }
@@ -56,15 +69,24 @@ class MnnRuntimeManager(
                 nativeSession?.close()
                 nativeSession = null
                 activeModel = null
-                val runtimeConfig = createRuntimeConfig(model)
-                logStore.info("jni", "Creating native session for ${model.modelId}")
+                val capability = backendCapabilities().first { it["backend"] == options.backend.wireName }
+                if (capability["available"] != true) {
+                    throw MnnEngineOperationException(
+                        "backend_unavailable",
+                        "${options.backend.wireName}: ${capability["reason"]}. ${(capability["detail"] as? String).orEmpty()}",
+                        capability,
+                    )
+                }
+                val runtimeConfig = createRuntimeConfig(model, options)
+                val dspInfo = (capability["dspArchitecture"] as? String)?.let { ", dsp=$it" }.orEmpty()
+                logStore.info("jni", "Creating native session for ${model.modelId}, backend=${options.backend.wireName}$dspInfo")
                 val loadStartedAt = SystemClock.elapsedRealtime()
                 val session = MnnNativeSession.load(model.configPath, runtimeConfig.toString())
                 val loadDurationMs = SystemClock.elapsedRealtime() - loadStartedAt
                 baseConfigJson = runtimeConfig.toString()
                 nativeSession = session
-                activeModel = model.copy(isActive = true, loadDurationMs = loadDurationMs)
-                logStore.info("mnn", "Loaded model ${model.modelId} in ${loadDurationMs}ms")
+                activeModel = model.copy(isActive = true, loadDurationMs = loadDurationMs, backend = options.backend.wireName)
+                logStore.info("mnn", "Loaded model ${model.modelId}, backend=${options.backend.wireName}, in ${loadDurationMs}ms")
                 onStateChanged("loaded", "idle", activeModel, null)
                 return activeModel!!
             } catch (error: Throwable) {
@@ -176,18 +198,15 @@ class MnnRuntimeManager(
         }
     }
 
-    private fun createRuntimeConfig(model: MnnModelInfo): JsonObject {
+    private fun createRuntimeConfig(model: MnnModelInfo, options: MnnLoadOptions): JsonObject {
         val root = JsonParser.parseString(File(model.configPath).readText(Charsets.UTF_8)).asJsonObject
-        root.addProperty("backend_type", "cpu")
-        root.addProperty("use_mmap", false)
-        if (!root.has("thread_num") || root.get("thread_num").asInt <= 0) {
-            root.addProperty("thread_num", Runtime.getRuntime().availableProcessors().coerceIn(1, 8))
-        }
-        val runtimeDir = directories.modelRuntimeDir(model.modelKey)
-        val tempDir = File(runtimeDir, "tmp")
-        check(tempDir.exists() || tempDir.mkdirs()) { "Failed to create model runtime directory." }
-        root.addProperty("tmp_path", tempDir.absolutePath)
-        return root
+        return MnnRuntimeConfig.create(
+            source = root,
+            options = options,
+            runtimeDir = directories.modelRuntimeDir(model.modelKey),
+            mnnVersion = MnnNativeBridge.version().substringBefore(" ("),
+            availableProcessors = Runtime.getRuntime().availableProcessors(),
+        )
     }
 
     class GenerationBusyException : IllegalStateException("A generation request is already active.")

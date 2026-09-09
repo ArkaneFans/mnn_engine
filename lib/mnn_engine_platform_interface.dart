@@ -18,6 +18,7 @@ abstract class MnnEnginePlatform extends PlatformInterface {
 
   Future<MnnEngineInfo> initialize();
   Future<MnnRuntimeSnapshot> getSnapshot();
+  Future<List<MnnBackendCapability>> getBackendCapabilities();
   Future<String> getTestRootPath();
   Future<List<MnnModelInfo>> listImportedModels();
   Future<MnnModelInfo> importModelDirectory({required bool replaceExisting});
@@ -41,7 +42,10 @@ abstract class MnnEnginePlatform extends PlatformInterface {
   });
   Future<void> deleteImportedModel(String modelId);
   Future<MnnModelInfo> renameImportedModel(String modelId, String newName);
-  Future<MnnModelInfo> loadModel(String modelId);
+  Future<MnnModelInfo> loadModel(
+    String modelId, {
+    MnnLoadOptions options = const MnnLoadOptions(),
+  });
   Future<void> unloadModel();
 
   /// Performs an advisory bind probe without starting the server. It is useful

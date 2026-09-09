@@ -1,0 +1,706 @@
+{
+  "architectures": {
+    "v73": {
+      "build": {
+        "androidPlatform": "android-28",
+        "architectureQueryTests": [
+          "sdk_headers_mock_driver",
+          "missing_capability_api"
+        ],
+        "buildInputs": {
+          "scripts/build_hexagon_android.sh": "4612817bc1df76e05533313c525d867207d0beccc956a90b3fca79aab7594eda",
+          "scripts/build_hexagon_docker.sh": "89f10168f67a873ad7eefaaf5f62204a3bf46727e9381bd4d8d15613bd0785cf",
+          "scripts/hexagon/CMakeLists.txt": "4a52d53c71b5251e6cb2f0d51fdc8725aaf65d4eced2e9f959b0f2e77276d2c0",
+          "scripts/hexagon/dsp_capabilities_utils.c": "74648ff118f32b2b72f91e09f10446185407dcd1e059da6ed7c6b0ef68c5bf31",
+          "scripts/hexagon/dsp_capabilities_utils.h": "b1debb73dd298bb88dcea90e9f2ac40de07f4ca740167cc31024440f222b024d",
+          "scripts/hexagon/test_dsp_arch_query.c": "9cba9fa13d6a2249c588afd4d32813d9240d4f979df6ba000ef21e0a24a2e5c0",
+          "scripts/hexagon/toolchain-image.txt": "631ef755aa46e4c6349f75290001d1ba448d03fad94fc9da2e60be10cb8bd8f6",
+          "scripts/hexagon_artifacts.py": "498010cfe451a784a170296d793503c410bac4c906110724416bde182e992aab",
+          "scripts/verify_hexagon_link.py": "3febd699c2074fffadf59f2a97db113566cdb4aa6db75dff9e31411bb2dc8659"
+        },
+        "cmakeVersion": "cmake version 3.31.6",
+        "compilerVersion": "QuIC LLVM Hexagon Clang version 19.0.07",
+        "containerImage": "ghcr.io/snapdragon-toolchain/arm64-android@sha256:91714433626f0d94a926538a1e46ec43756c5b8e3262b91b95df1e812940aed1",
+        "containerImageId": "sha256:91714433626f0d94a926538a1e46ec43756c5b8e3262b91b95df1e812940aed1",
+        "linkVerification": {
+          "libMNN_htpops.so": {
+            "needed": [
+              "libc.so",
+              "libcdsprpc.so",
+              "libdl.so",
+              "libm.so"
+            ]
+          },
+          "libMNN_htpops_skel.so": {
+            "firmwareSymbols": [
+              "HAP_mmap_get",
+              "HAP_mmap_put",
+              "HAP_perf_qtimer_count_to_us",
+              "HAP_power_set",
+              "_Unwind_Resume",
+              "__wrap_calloc",
+              "__wrap_free",
+              "__wrap_malloc",
+              "__wrap_memalign",
+              "dspqueue_close",
+              "dspqueue_import",
+              "dspqueue_read_noblock",
+              "dspqueue_write",
+              "qurt_anysignal_clear",
+              "qurt_anysignal_set",
+              "qurt_hvx_get_units",
+              "qurt_mem_cache_clean",
+              "qurt_mutex_destroy",
+              "qurt_mutex_init",
+              "qurt_mutex_lock",
+              "qurt_mutex_unlock",
+              "qurt_sem_add",
+              "qurt_sem_destroy",
+              "qurt_sem_down",
+              "qurt_sem_init_val",
+              "qurt_signal_destroy",
+              "qurt_signal_get",
+              "qurt_signal_init",
+              "qurt_signal_wait",
+              "qurt_sleep",
+              "qurt_sysenv_get_max_hw_threads",
+              "qurt_thread_create",
+              "qurt_thread_exit",
+              "qurt_thread_get_id",
+              "qurt_thread_get_priority",
+              "qurt_thread_join",
+              "qurt_thread_set_priority"
+            ],
+            "needed": [
+              "libc++.so.1",
+              "libc++abi.so.1",
+              "libc.so",
+              "libgcc.so"
+            ],
+            "weakSymbols": [
+              "HAP_debug",
+              "HAP_debug_v2",
+              "compute_resource_acquire",
+              "compute_resource_acquire_cached",
+              "compute_resource_attr_get_vtcm_ptr_v2",
+              "compute_resource_attr_init",
+              "compute_resource_attr_init_v2",
+              "compute_resource_attr_set_cache_mode",
+              "compute_resource_attr_set_hmx_param",
+              "compute_resource_attr_set_release_callback",
+              "compute_resource_attr_set_serialize",
+              "compute_resource_attr_set_vtcm_param_v2",
+              "compute_resource_hmx_lock2",
+              "compute_resource_hmx_unlock2",
+              "compute_resource_query_VTCM",
+              "compute_resource_release",
+              "compute_resource_release_cached",
+              "compute_resource_update_priority"
+            ]
+          },
+          "libc++.so.1": {
+            "firmwareSymbols": [
+              "_Unwind_Resume",
+              "clock_gettime",
+              "nanosleep",
+              "pthread_cond_broadcast",
+              "pthread_cond_destroy",
+              "pthread_cond_signal",
+              "pthread_cond_timedwait",
+              "pthread_cond_wait",
+              "pthread_detach",
+              "pthread_getspecific",
+              "pthread_join",
+              "pthread_key_create",
+              "pthread_mutex_destroy",
+              "pthread_mutex_init",
+              "pthread_mutex_lock",
+              "pthread_mutex_trylock",
+              "pthread_mutex_unlock",
+              "pthread_mutexattr_destroy",
+              "pthread_mutexattr_init",
+              "pthread_mutexattr_settype",
+              "pthread_self",
+              "pthread_setspecific"
+            ],
+            "needed": [
+              "libc++abi.so.1",
+              "libc.so",
+              "libgcc.so"
+            ],
+            "weakSymbols": []
+          },
+          "libc++abi.so.1": {
+            "firmwareSymbols": [
+              "_Unwind_DeleteException",
+              "_Unwind_GetIP",
+              "_Unwind_GetLanguageSpecificData",
+              "_Unwind_GetRegionStart",
+              "_Unwind_RaiseException",
+              "_Unwind_Resume",
+              "_Unwind_SetGR",
+              "_Unwind_SetIP",
+              "pthread_cond_broadcast",
+              "pthread_cond_wait",
+              "pthread_getspecific",
+              "pthread_key_create",
+              "pthread_mutex_lock",
+              "pthread_mutex_unlock",
+              "pthread_once",
+              "pthread_setspecific"
+            ],
+            "needed": [
+              "libc.so",
+              "libgcc.so"
+            ],
+            "weakSymbols": []
+          }
+        },
+        "ndkVersion": "27.3.13750724",
+        "sdkVersion": "6.6.0.0"
+      },
+      "files": {
+        "libMNN_htpops_skel.so": {
+          "sha256": "09669ebceb57c64deb78ec71692cfed9d5b7104a66e06652c88266d16054d1cf",
+          "sizeBytes": 418352
+        },
+        "libc++.so.1": {
+          "sha256": "1d4539d20ca22778d38f7c89a9b43bb68c219a99ca599eddfe2f0f02e4bd80d7",
+          "sizeBytes": 4514240
+        },
+        "libc++abi.so.1": {
+          "sha256": "4493c24f2b591e7797b35f0dc1c1bfc77bf09301354534e7756dd38251dae48f",
+          "sizeBytes": 980320
+        }
+      }
+    },
+    "v75": {
+      "build": {
+        "androidPlatform": "android-28",
+        "architectureQueryTests": [
+          "sdk_headers_mock_driver",
+          "missing_capability_api"
+        ],
+        "buildInputs": {
+          "scripts/build_hexagon_android.sh": "4612817bc1df76e05533313c525d867207d0beccc956a90b3fca79aab7594eda",
+          "scripts/build_hexagon_docker.sh": "89f10168f67a873ad7eefaaf5f62204a3bf46727e9381bd4d8d15613bd0785cf",
+          "scripts/hexagon/CMakeLists.txt": "4a52d53c71b5251e6cb2f0d51fdc8725aaf65d4eced2e9f959b0f2e77276d2c0",
+          "scripts/hexagon/dsp_capabilities_utils.c": "74648ff118f32b2b72f91e09f10446185407dcd1e059da6ed7c6b0ef68c5bf31",
+          "scripts/hexagon/dsp_capabilities_utils.h": "b1debb73dd298bb88dcea90e9f2ac40de07f4ca740167cc31024440f222b024d",
+          "scripts/hexagon/test_dsp_arch_query.c": "9cba9fa13d6a2249c588afd4d32813d9240d4f979df6ba000ef21e0a24a2e5c0",
+          "scripts/hexagon/toolchain-image.txt": "631ef755aa46e4c6349f75290001d1ba448d03fad94fc9da2e60be10cb8bd8f6",
+          "scripts/hexagon_artifacts.py": "498010cfe451a784a170296d793503c410bac4c906110724416bde182e992aab",
+          "scripts/verify_hexagon_link.py": "3febd699c2074fffadf59f2a97db113566cdb4aa6db75dff9e31411bb2dc8659"
+        },
+        "cmakeVersion": "cmake version 3.31.6",
+        "compilerVersion": "QuIC LLVM Hexagon Clang version 19.0.07",
+        "containerImage": "ghcr.io/snapdragon-toolchain/arm64-android@sha256:91714433626f0d94a926538a1e46ec43756c5b8e3262b91b95df1e812940aed1",
+        "containerImageId": "sha256:91714433626f0d94a926538a1e46ec43756c5b8e3262b91b95df1e812940aed1",
+        "linkVerification": {
+          "libMNN_htpops.so": {
+            "needed": [
+              "libc.so",
+              "libcdsprpc.so",
+              "libdl.so",
+              "libm.so"
+            ]
+          },
+          "libMNN_htpops_skel.so": {
+            "firmwareSymbols": [
+              "HAP_mmap_get",
+              "HAP_mmap_put",
+              "HAP_perf_qtimer_count_to_us",
+              "HAP_power_set",
+              "_Unwind_Resume",
+              "__wrap_calloc",
+              "__wrap_free",
+              "__wrap_malloc",
+              "__wrap_memalign",
+              "dspqueue_close",
+              "dspqueue_import",
+              "dspqueue_read_noblock",
+              "dspqueue_write",
+              "qurt_anysignal_clear",
+              "qurt_anysignal_set",
+              "qurt_hvx_get_units",
+              "qurt_mem_cache_clean",
+              "qurt_mutex_destroy",
+              "qurt_mutex_init",
+              "qurt_mutex_lock",
+              "qurt_mutex_unlock",
+              "qurt_sem_add",
+              "qurt_sem_destroy",
+              "qurt_sem_down",
+              "qurt_sem_init_val",
+              "qurt_signal_destroy",
+              "qurt_signal_get",
+              "qurt_signal_init",
+              "qurt_signal_wait",
+              "qurt_sleep",
+              "qurt_sysenv_get_max_hw_threads",
+              "qurt_thread_create",
+              "qurt_thread_exit",
+              "qurt_thread_get_id",
+              "qurt_thread_get_priority",
+              "qurt_thread_join",
+              "qurt_thread_set_priority"
+            ],
+            "needed": [
+              "libc++.so.1",
+              "libc++abi.so.1",
+              "libc.so",
+              "libgcc.so"
+            ],
+            "weakSymbols": [
+              "HAP_debug",
+              "HAP_debug_v2",
+              "compute_resource_acquire",
+              "compute_resource_acquire_cached",
+              "compute_resource_attr_get_vtcm_ptr_v2",
+              "compute_resource_attr_init",
+              "compute_resource_attr_init_v2",
+              "compute_resource_attr_set_cache_mode",
+              "compute_resource_attr_set_hmx_param",
+              "compute_resource_attr_set_release_callback",
+              "compute_resource_attr_set_serialize",
+              "compute_resource_attr_set_vtcm_param_v2",
+              "compute_resource_hmx_lock2",
+              "compute_resource_hmx_unlock2",
+              "compute_resource_query_VTCM",
+              "compute_resource_release",
+              "compute_resource_release_cached",
+              "compute_resource_update_priority"
+            ]
+          },
+          "libc++.so.1": {
+            "firmwareSymbols": [
+              "_Unwind_Resume",
+              "clock_gettime",
+              "nanosleep",
+              "pthread_cond_broadcast",
+              "pthread_cond_destroy",
+              "pthread_cond_signal",
+              "pthread_cond_timedwait",
+              "pthread_cond_wait",
+              "pthread_detach",
+              "pthread_getspecific",
+              "pthread_join",
+              "pthread_key_create",
+              "pthread_mutex_destroy",
+              "pthread_mutex_init",
+              "pthread_mutex_lock",
+              "pthread_mutex_trylock",
+              "pthread_mutex_unlock",
+              "pthread_mutexattr_destroy",
+              "pthread_mutexattr_init",
+              "pthread_mutexattr_settype",
+              "pthread_self",
+              "pthread_setspecific"
+            ],
+            "needed": [
+              "libc++abi.so.1",
+              "libc.so",
+              "libgcc.so"
+            ],
+            "weakSymbols": []
+          },
+          "libc++abi.so.1": {
+            "firmwareSymbols": [
+              "_Unwind_DeleteException",
+              "_Unwind_GetIP",
+              "_Unwind_GetLanguageSpecificData",
+              "_Unwind_GetRegionStart",
+              "_Unwind_RaiseException",
+              "_Unwind_Resume",
+              "_Unwind_SetGR",
+              "_Unwind_SetIP",
+              "pthread_cond_broadcast",
+              "pthread_cond_wait",
+              "pthread_getspecific",
+              "pthread_key_create",
+              "pthread_mutex_lock",
+              "pthread_mutex_unlock",
+              "pthread_once",
+              "pthread_setspecific"
+            ],
+            "needed": [
+              "libc.so",
+              "libgcc.so"
+            ],
+            "weakSymbols": []
+          }
+        },
+        "ndkVersion": "27.3.13750724",
+        "sdkVersion": "6.6.0.0"
+      },
+      "files": {
+        "libMNN_htpops_skel.so": {
+          "sha256": "62484e98acc9064e36ebc70e01b9746262d7f8627f32cf8b462032ac4146f22d",
+          "sizeBytes": 418352
+        },
+        "libc++.so.1": {
+          "sha256": "b6d7d626dd5a3bf9c3cbc0e76c20148ad7fa1a5e2d2597eccf5a21fe01816f28",
+          "sizeBytes": 4514240
+        },
+        "libc++abi.so.1": {
+          "sha256": "3a6fd1ce9163d9c0f5362167c6830b8bc0f55e21154cf841b199fc8f66c8d63e",
+          "sizeBytes": 980320
+        }
+      }
+    },
+    "v79": {
+      "build": {
+        "androidPlatform": "android-28",
+        "architectureQueryTests": [
+          "sdk_headers_mock_driver",
+          "missing_capability_api"
+        ],
+        "buildInputs": {
+          "scripts/build_hexagon_android.sh": "4612817bc1df76e05533313c525d867207d0beccc956a90b3fca79aab7594eda",
+          "scripts/build_hexagon_docker.sh": "89f10168f67a873ad7eefaaf5f62204a3bf46727e9381bd4d8d15613bd0785cf",
+          "scripts/hexagon/CMakeLists.txt": "4a52d53c71b5251e6cb2f0d51fdc8725aaf65d4eced2e9f959b0f2e77276d2c0",
+          "scripts/hexagon/dsp_capabilities_utils.c": "74648ff118f32b2b72f91e09f10446185407dcd1e059da6ed7c6b0ef68c5bf31",
+          "scripts/hexagon/dsp_capabilities_utils.h": "b1debb73dd298bb88dcea90e9f2ac40de07f4ca740167cc31024440f222b024d",
+          "scripts/hexagon/test_dsp_arch_query.c": "9cba9fa13d6a2249c588afd4d32813d9240d4f979df6ba000ef21e0a24a2e5c0",
+          "scripts/hexagon/toolchain-image.txt": "631ef755aa46e4c6349f75290001d1ba448d03fad94fc9da2e60be10cb8bd8f6",
+          "scripts/hexagon_artifacts.py": "498010cfe451a784a170296d793503c410bac4c906110724416bde182e992aab",
+          "scripts/verify_hexagon_link.py": "3febd699c2074fffadf59f2a97db113566cdb4aa6db75dff9e31411bb2dc8659"
+        },
+        "cmakeVersion": "cmake version 3.31.6",
+        "compilerVersion": "QuIC LLVM Hexagon Clang version 19.0.07",
+        "containerImage": "ghcr.io/snapdragon-toolchain/arm64-android@sha256:91714433626f0d94a926538a1e46ec43756c5b8e3262b91b95df1e812940aed1",
+        "containerImageId": "sha256:91714433626f0d94a926538a1e46ec43756c5b8e3262b91b95df1e812940aed1",
+        "linkVerification": {
+          "libMNN_htpops.so": {
+            "needed": [
+              "libc.so",
+              "libcdsprpc.so",
+              "libdl.so",
+              "libm.so"
+            ]
+          },
+          "libMNN_htpops_skel.so": {
+            "firmwareSymbols": [
+              "HAP_mmap_get",
+              "HAP_mmap_put",
+              "HAP_perf_qtimer_count_to_us",
+              "HAP_power_set",
+              "_Unwind_Resume",
+              "__wrap_calloc",
+              "__wrap_free",
+              "__wrap_malloc",
+              "__wrap_memalign",
+              "dspqueue_close",
+              "dspqueue_import",
+              "dspqueue_read_noblock",
+              "dspqueue_write",
+              "qurt_anysignal_clear",
+              "qurt_anysignal_set",
+              "qurt_hvx_get_units",
+              "qurt_mem_cache_clean",
+              "qurt_mutex_destroy",
+              "qurt_mutex_init",
+              "qurt_mutex_lock",
+              "qurt_mutex_unlock",
+              "qurt_sem_add",
+              "qurt_sem_destroy",
+              "qurt_sem_down",
+              "qurt_sem_init_val",
+              "qurt_signal_destroy",
+              "qurt_signal_get",
+              "qurt_signal_init",
+              "qurt_signal_wait",
+              "qurt_sleep",
+              "qurt_sysenv_get_max_hw_threads",
+              "qurt_thread_create",
+              "qurt_thread_exit",
+              "qurt_thread_get_id",
+              "qurt_thread_get_priority",
+              "qurt_thread_join",
+              "qurt_thread_set_priority"
+            ],
+            "needed": [
+              "libc++.so.1",
+              "libc++abi.so.1",
+              "libc.so",
+              "libgcc.so"
+            ],
+            "weakSymbols": [
+              "HAP_debug",
+              "HAP_debug_v2",
+              "compute_resource_acquire",
+              "compute_resource_acquire_cached",
+              "compute_resource_attr_get_vtcm_ptr_v2",
+              "compute_resource_attr_init",
+              "compute_resource_attr_init_v2",
+              "compute_resource_attr_set_cache_mode",
+              "compute_resource_attr_set_hmx_param",
+              "compute_resource_attr_set_release_callback",
+              "compute_resource_attr_set_serialize",
+              "compute_resource_attr_set_vtcm_param_v2",
+              "compute_resource_hmx_lock2",
+              "compute_resource_hmx_unlock2",
+              "compute_resource_query_VTCM",
+              "compute_resource_release",
+              "compute_resource_release_cached",
+              "compute_resource_update_priority",
+              "sysmon_set_dcvs_v3_protected_bus_corners"
+            ]
+          },
+          "libc++.so.1": {
+            "firmwareSymbols": [
+              "_Unwind_Resume",
+              "clock_gettime",
+              "nanosleep",
+              "pthread_cond_broadcast",
+              "pthread_cond_destroy",
+              "pthread_cond_signal",
+              "pthread_cond_timedwait",
+              "pthread_cond_wait",
+              "pthread_detach",
+              "pthread_getspecific",
+              "pthread_join",
+              "pthread_key_create",
+              "pthread_mutex_destroy",
+              "pthread_mutex_init",
+              "pthread_mutex_lock",
+              "pthread_mutex_trylock",
+              "pthread_mutex_unlock",
+              "pthread_mutexattr_destroy",
+              "pthread_mutexattr_init",
+              "pthread_mutexattr_settype",
+              "pthread_self",
+              "pthread_setspecific"
+            ],
+            "needed": [
+              "libc++abi.so.1",
+              "libc.so",
+              "libgcc.so"
+            ],
+            "weakSymbols": []
+          },
+          "libc++abi.so.1": {
+            "firmwareSymbols": [
+              "_Unwind_DeleteException",
+              "_Unwind_GetIP",
+              "_Unwind_GetLanguageSpecificData",
+              "_Unwind_GetRegionStart",
+              "_Unwind_RaiseException",
+              "_Unwind_Resume",
+              "_Unwind_SetGR",
+              "_Unwind_SetIP",
+              "pthread_cond_broadcast",
+              "pthread_cond_wait",
+              "pthread_getspecific",
+              "pthread_key_create",
+              "pthread_mutex_lock",
+              "pthread_mutex_unlock",
+              "pthread_once",
+              "pthread_setspecific"
+            ],
+            "needed": [
+              "libc.so",
+              "libgcc.so"
+            ],
+            "weakSymbols": []
+          }
+        },
+        "ndkVersion": "27.3.13750724",
+        "sdkVersion": "6.6.0.0"
+      },
+      "files": {
+        "libMNN_htpops_skel.so": {
+          "sha256": "3d75672f84be44d4cf0d2ad751a7748f0ae550c7597849b60fd8f8345bf3a543",
+          "sizeBytes": 426672
+        },
+        "libc++.so.1": {
+          "sha256": "ded681e4a98662e933486a553b86efd2b7cc72bb99d1963b15e3e8ee0422f2e0",
+          "sizeBytes": 4514240
+        },
+        "libc++abi.so.1": {
+          "sha256": "52c37aa56001e7d2ccb604fb97f98ac87023c37cb67b66046c415d6a3038b4f6",
+          "sizeBytes": 980320
+        }
+      }
+    },
+    "v81": {
+      "build": {
+        "androidPlatform": "android-28",
+        "architectureQueryTests": [
+          "sdk_headers_mock_driver",
+          "missing_capability_api"
+        ],
+        "buildInputs": {
+          "scripts/build_hexagon_android.sh": "4612817bc1df76e05533313c525d867207d0beccc956a90b3fca79aab7594eda",
+          "scripts/build_hexagon_docker.sh": "89f10168f67a873ad7eefaaf5f62204a3bf46727e9381bd4d8d15613bd0785cf",
+          "scripts/hexagon/CMakeLists.txt": "4a52d53c71b5251e6cb2f0d51fdc8725aaf65d4eced2e9f959b0f2e77276d2c0",
+          "scripts/hexagon/dsp_capabilities_utils.c": "74648ff118f32b2b72f91e09f10446185407dcd1e059da6ed7c6b0ef68c5bf31",
+          "scripts/hexagon/dsp_capabilities_utils.h": "b1debb73dd298bb88dcea90e9f2ac40de07f4ca740167cc31024440f222b024d",
+          "scripts/hexagon/test_dsp_arch_query.c": "9cba9fa13d6a2249c588afd4d32813d9240d4f979df6ba000ef21e0a24a2e5c0",
+          "scripts/hexagon/toolchain-image.txt": "631ef755aa46e4c6349f75290001d1ba448d03fad94fc9da2e60be10cb8bd8f6",
+          "scripts/hexagon_artifacts.py": "498010cfe451a784a170296d793503c410bac4c906110724416bde182e992aab",
+          "scripts/verify_hexagon_link.py": "3febd699c2074fffadf59f2a97db113566cdb4aa6db75dff9e31411bb2dc8659"
+        },
+        "cmakeVersion": "cmake version 3.31.6",
+        "compilerVersion": "QuIC LLVM Hexagon Clang version 19.0.07",
+        "containerImage": "ghcr.io/snapdragon-toolchain/arm64-android@sha256:91714433626f0d94a926538a1e46ec43756c5b8e3262b91b95df1e812940aed1",
+        "containerImageId": "sha256:91714433626f0d94a926538a1e46ec43756c5b8e3262b91b95df1e812940aed1",
+        "linkVerification": {
+          "libMNN_htpops.so": {
+            "needed": [
+              "libc.so",
+              "libcdsprpc.so",
+              "libdl.so",
+              "libm.so"
+            ]
+          },
+          "libMNN_htpops_skel.so": {
+            "firmwareSymbols": [
+              "HAP_mmap_get",
+              "HAP_mmap_put",
+              "HAP_perf_qtimer_count_to_us",
+              "HAP_power_set",
+              "_Unwind_Resume",
+              "__wrap_calloc",
+              "__wrap_free",
+              "__wrap_malloc",
+              "__wrap_memalign",
+              "dspqueue_close",
+              "dspqueue_import",
+              "dspqueue_read_noblock",
+              "dspqueue_write",
+              "qurt_anysignal_clear",
+              "qurt_anysignal_set",
+              "qurt_hvx_get_units",
+              "qurt_mem_cache_clean",
+              "qurt_mutex_destroy",
+              "qurt_mutex_init",
+              "qurt_mutex_lock",
+              "qurt_mutex_unlock",
+              "qurt_sem_add",
+              "qurt_sem_destroy",
+              "qurt_sem_down",
+              "qurt_sem_init_val",
+              "qurt_signal_destroy",
+              "qurt_signal_get",
+              "qurt_signal_init",
+              "qurt_signal_wait",
+              "qurt_sleep",
+              "qurt_sysenv_get_max_hw_threads",
+              "qurt_thread_create",
+              "qurt_thread_exit",
+              "qurt_thread_get_id",
+              "qurt_thread_get_priority",
+              "qurt_thread_join",
+              "qurt_thread_set_priority"
+            ],
+            "needed": [
+              "libc++.so.1",
+              "libc++abi.so.1",
+              "libc.so",
+              "libgcc.so"
+            ],
+            "weakSymbols": [
+              "HAP_debug",
+              "HAP_debug_v2",
+              "compute_resource_acquire",
+              "compute_resource_acquire_cached",
+              "compute_resource_attr_get_vtcm_ptr_v2",
+              "compute_resource_attr_init",
+              "compute_resource_attr_init_v2",
+              "compute_resource_attr_set_cache_mode",
+              "compute_resource_attr_set_hmx_param",
+              "compute_resource_attr_set_release_callback",
+              "compute_resource_attr_set_serialize",
+              "compute_resource_attr_set_vtcm_param_v2",
+              "compute_resource_hmx_lock",
+              "compute_resource_hmx_unlock",
+              "compute_resource_query_VTCM",
+              "compute_resource_release",
+              "compute_resource_release_cached",
+              "compute_resource_update_priority",
+              "sysmon_set_dcvs_v3_protected_bus_corners"
+            ]
+          },
+          "libc++.so.1": {
+            "firmwareSymbols": [
+              "_Unwind_Resume",
+              "clock_gettime",
+              "nanosleep",
+              "pthread_cond_broadcast",
+              "pthread_cond_destroy",
+              "pthread_cond_signal",
+              "pthread_cond_timedwait",
+              "pthread_cond_wait",
+              "pthread_detach",
+              "pthread_getspecific",
+              "pthread_join",
+              "pthread_key_create",
+              "pthread_mutex_destroy",
+              "pthread_mutex_init",
+              "pthread_mutex_lock",
+              "pthread_mutex_trylock",
+              "pthread_mutex_unlock",
+              "pthread_mutexattr_destroy",
+              "pthread_mutexattr_init",
+              "pthread_mutexattr_settype",
+              "pthread_self",
+              "pthread_setspecific"
+            ],
+            "needed": [
+              "libc++abi.so.1",
+              "libc.so",
+              "libgcc.so"
+            ],
+            "weakSymbols": []
+          },
+          "libc++abi.so.1": {
+            "firmwareSymbols": [
+              "_Unwind_DeleteException",
+              "_Unwind_GetIP",
+              "_Unwind_GetLanguageSpecificData",
+              "_Unwind_GetRegionStart",
+              "_Unwind_RaiseException",
+              "_Unwind_Resume",
+              "_Unwind_SetGR",
+              "_Unwind_SetIP",
+              "pthread_cond_broadcast",
+              "pthread_cond_wait",
+              "pthread_getspecific",
+              "pthread_key_create",
+              "pthread_mutex_lock",
+              "pthread_mutex_unlock",
+              "pthread_once",
+              "pthread_setspecific"
+            ],
+            "needed": [
+              "libc.so",
+              "libgcc.so"
+            ],
+            "weakSymbols": []
+          }
+        },
+        "ndkVersion": "27.3.13750724",
+        "sdkVersion": "6.6.0.0"
+      },
+      "files": {
+        "libMNN_htpops_skel.so": {
+          "sha256": "8a3e4db382a04a03fb152bce67d8d8624c4dccc9b80f2100a00db48bd107cfad",
+          "sizeBytes": 426512
+        },
+        "libc++.so.1": {
+          "sha256": "11f6ffc21bc68da965d9f9c1ea667cd64c1fc9120563a7cd49f1da09f693a612",
+          "sizeBytes": 4514240
+        },
+        "libc++abi.so.1": {
+          "sha256": "97114fcbea5dc729c4751ca0fa05c928b322bcabc584624638498ff9b8d827d7",
+          "sizeBytes": 980320
+        }
+      }
+    }
+  },
+  "mnnCommit": "d407447ed56c4121a11ccbd266dc184ca1ead0c2",
+  "schemaVersion": 2,
+  "stubAbiVersion": 1,
+  "stubSha256": "2877aac099ffe483c2f735deea6280a0fef54f1149684d598abb4866efc2248a"
+}

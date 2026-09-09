@@ -1,7 +1,12 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mnn_engine/mnn_engine.dart'
-    show MnnEngineException, MnnServerBindMode;
+    show
+        MnnEngineException,
+        MnnServerBindMode,
+        MnnBackend,
+        MnnBackendStatus,
+        MnnLoadOptions;
 import 'package:mnn_engine/mnn_engine_method_channel.dart';
 
 void main() {
@@ -94,7 +99,10 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
           expect(call.method, 'loadModel');
-          expect(call.arguments, <String, Object?>{'modelId': 'qwen'});
+          expect(call.arguments, <String, Object?>{
+            'modelId': 'qwen',
+            'options': {'backend': 'cpu'},
+          });
           return <String, Object?>{
             'modelId': 'qwen',
             'modelKey': 'qwen',
@@ -111,6 +119,110 @@ void main() {
     final model = await platform.loadModel('qwen');
 
     expect(model.loadDurationMs, 1234);
+  });
+
+  test(
+    'forwards each explicit backend and decodes the resident backend',
+    () async {
+      for (final backend in MnnBackend.values) {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (call) async {
+              expect(call.method, 'loadModel');
+              expect(call.arguments, {
+                'modelId': 'qwen',
+                'options': {'backend': backend.name},
+              });
+              return {
+                'modelId': 'qwen',
+                'backend': backend.name,
+                'isActive': true,
+              };
+            });
+        final model = await platform.loadModel(
+          'qwen',
+          options: MnnLoadOptions(backend: backend),
+        );
+        expect(model.backend, backend);
+      }
+    },
+  );
+
+  test('distinguishes compiled Hexagon from a deployable runtime', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          expect(call.method, 'getBackendCapabilities');
+          return [
+            {
+              'backend': 'opencl',
+              'compiled': true,
+              'available': true,
+              'reason': 'available',
+            },
+            {
+              'backend': 'hexagon',
+              'compiled': true,
+              'available': false,
+              'reason': 'runtimeLibrariesMissing',
+              'detail': 'DSP skeleton missing',
+            },
+          ];
+        });
+    final capabilities = await platform.getBackendCapabilities();
+    expect(capabilities.first.available, isTrue);
+    expect(capabilities.first.dspArchitecture, isNull);
+    expect(capabilities.last.backend, MnnBackend.hexagon);
+    expect(capabilities.last.compiled, isTrue);
+    expect(capabilities.last.available, isFalse);
+    expect(capabilities.last.status, MnnBackendStatus.runtimeLibrariesMissing);
+    expect(capabilities.last.detail, 'DSP skeleton missing');
+  });
+
+  test(
+    'decodes the DSP architecture selected automatically by Android',
+    () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            expect(call.method, 'getBackendCapabilities');
+            return [
+              {
+                'backend': 'hexagon',
+                'compiled': true,
+                'available': true,
+                'reason': 'available',
+                'dspArchitecture': 'v79',
+              },
+            ];
+          });
+      final capability = (await platform.getBackendCapabilities()).single;
+      expect(capability.backend, MnnBackend.hexagon);
+      expect(capability.available, isTrue);
+      expect(capability.dspArchitecture, 'v79');
+    },
+  );
+
+  test('backend failures retain actionable native details', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          throw PlatformException(
+            code: 'backend_unavailable',
+            message: 'OpenCL unavailable',
+            details: {'backend': 'opencl', 'reason': 'driverUnavailable'},
+          );
+        });
+    await expectLater(
+      platform.loadModel(
+        'qwen',
+        options: const MnnLoadOptions(backend: MnnBackend.opencl),
+      ),
+      throwsA(
+        isA<MnnEngineException>()
+            .having((error) => error.code, 'code', 'backend_unavailable')
+            .having((error) => error.details, 'details', {
+              'backend': 'opencl',
+              'reason': 'driverUnavailable',
+            }),
+      ),
+    );
   });
 
   test('importModelFromPath forwards the private directory', () async {

@@ -15,6 +15,7 @@
 *.ico binary
 *.jar binary
 *.so binary
+*.so.* binary
 *.zip binary
 *.gz binary
 *.apk binary

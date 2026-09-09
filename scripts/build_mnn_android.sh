@@ -7,7 +7,7 @@ cmake_bin="${MNN_CMAKE:-${HOME}/.local/share/mnn_engine/toolchains/cmake-3.22.1/
 android_ndk="${ANDROID_NDK:-${HOME}/android-ndk-r27d}"
 ninja_bin="/usr/bin/ninja"
 verifier_script="${plugin_root}/scripts/verify_mnn_artifacts.sh"
-adapter_abi_version="2"
+adapter_abi_version="4"
 expected_cmake_version="3.22.1"
 
 if [[ ! -x "${cmake_bin}" ]]; then
@@ -46,7 +46,7 @@ fi
 mnn_commit="$(git -C "${mnn_root}" rev-parse HEAD)"
 ndk_revision="$(sed -n 's/^Pkg.Revision[[:space:]]*=[[:space:]]*//p' "${android_ndk}/source.properties")"
 ninja_version="$("${ninja_bin}" --version)"
-flags_key='CMAKE_BUILD_TYPE=Release|ANDROID_ABI=arm64-v8a|ANDROID_PLATFORM=android-28|ANDROID_STL=c++_static|ANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON|MNN_BUILD_SHARED_LIBS=ON|MNN_BUILD_FOR_ANDROID_COMMAND=ON|MNN_BUILD_LLM=ON|MNN_BUILD_LLM_OMNI=ON|MNN_LOW_MEMORY=ON|MNN_SUPPORT_TRANSFORMER_FUSE=ON|MNN_ARM82=ON|MNN_USE_LOGCAT=ON|MNN_SEP_BUILD=OFF|MNN_KLEIDIAI=OFF|MNN_BUILD_DIFFUSION=OFF|MNN_BUILD_OPENCV=ON|MNN_IMGCODECS=ON|MNN_BUILD_AUDIO=ON|MNN_OPENCL=OFF|MNN_QNN=OFF|MNN_BUILD_TEST=OFF|MNN_BUILD_BENCHMARK=OFF'
+flags_key='CMAKE_BUILD_TYPE=Release|ANDROID_ABI=arm64-v8a|ANDROID_PLATFORM=android-28|ANDROID_STL=c++_static|ANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON|MNN_BUILD_SHARED_LIBS=ON|MNN_BUILD_FOR_ANDROID_COMMAND=ON|MNN_BUILD_LLM=ON|MNN_BUILD_LLM_OMNI=ON|MNN_LOW_MEMORY=ON|MNN_SUPPORT_TRANSFORMER_FUSE=ON|MNN_ARM82=ON|MNN_USE_LOGCAT=ON|MNN_SEP_BUILD=OFF|MNN_KLEIDIAI=OFF|MNN_BUILD_DIFFUSION=OFF|MNN_BUILD_OPENCV=ON|MNN_IMGCODECS=ON|MNN_BUILD_AUDIO=ON|MNN_OPENCL=ON|MNN_VULKAN=ON|MNN_VULKAN_IMAGE=OFF|MNN_HEXAGON=ON|MNN_QNN=OFF|MNN_BUILD_TEST=OFF|MNN_BUILD_BENCHMARK=OFF'
 adapter_hash="$(find "${plugin_root}/android/src/main/cpp" -maxdepth 1 -type f \( -name '*.cpp' -o -name '*.hpp' -o -name 'CMakeLists.txt' \) -print0 | sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}')"
 mnn_fingerprint="$(printf '%s\n%s\n%s\n%s\n%s\n' "${mnn_commit}" "${ndk_revision}" "${cmake_version}" "${ninja_version}" "${flags_key}" | sha256sum | cut -c1-24)"
 fingerprint="$(printf '%s\n%s\n%s\n' "${mnn_fingerprint}" "${adapter_hash}" "${adapter_abi_version}" | sha256sum | cut -c1-24)"
@@ -90,7 +90,10 @@ mkdir -p "${mnn_build_dir}" "${jni_build_dir}" "${generated_dir}"
     -DMNN_BUILD_OPENCV=ON \
     -DMNN_IMGCODECS=ON \
     -DMNN_BUILD_AUDIO=ON \
-    -DMNN_OPENCL=OFF \
+    -DMNN_OPENCL=ON \
+    -DMNN_VULKAN=ON \
+    -DMNN_VULKAN_IMAGE=OFF \
+    -DMNN_HEXAGON=ON \
     -DMNN_QNN=OFF \
     -DMNN_BUILD_TEST=OFF \
     -DMNN_BUILD_BENCHMARK=OFF
@@ -112,6 +115,9 @@ fi
     -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON \
     -DMNN_ROOT="${mnn_root}" \
     -DMNN_LIBRARY="${mnn_library}" \
+    -DMNN_OPENCL=ON \
+    -DMNN_VULKAN=ON \
+    -DMNN_HEXAGON=ON \
     -DMNN_COMMIT="${mnn_commit}"
 
 "${cmake_bin}" --build "${jni_build_dir}" --parallel "$(nproc)"
@@ -171,7 +177,10 @@ cat > "${staging_output}/mnn_build_info.json" <<EOF
     "MNN_BUILD_OPENCV=ON",
     "MNN_IMGCODECS=ON",
     "MNN_BUILD_AUDIO=ON",
-    "MNN_OPENCL=OFF",
+    "MNN_OPENCL=ON",
+    "MNN_VULKAN=ON",
+    "MNN_VULKAN_IMAGE=OFF",
+    "MNN_HEXAGON=ON",
     "MNN_QNN=OFF",
     "MNN_BUILD_TEST=OFF",
     "MNN_BUILD_BENCHMARK=OFF"

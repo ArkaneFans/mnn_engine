@@ -13,18 +13,160 @@ libraries and do not need this toolchain.
 - CMake `3.22.1`, Ninja, Python 3, and a C/C++ build toolchain
 - An ARM64 Android target (`arm64-v8a`)
 
-The plugin is built against MNN 3.6.0 at commit
-`cc20f672af9e177e2fa338c332dc097de2fc9264`.
+The plugin is built against MNN 3.6.1 at commit
+`d407447ed56c4121a11ccbd266dc184ca1ead0c2`.
+
+The common build enables `MNN_OPENCL`, `MNN_VULKAN` and `MNN_HEXAGON`, with
+`MNN_VULKAN_IMAGE=OFF` for LLM buffer operators. Hexagon host compilation does
+not require the SDK; executing on the DSP does.
 
 ## Recommended: GitHub Actions
 
-For a clean, reproducible build, first fork the repository. Open the **Actions**
-tab in your fork, enable workflows when GitHub asks for confirmation, and run
-**Build Android native libraries**.
+Use [build-native-android.yml](../.github/workflows/build-native-android.yml).
+It runs on GitHub-hosted Ubuntu 22.04, installs the pinned NDK/CMake versions,
+builds MNN and JNI, optionally builds the Hexagon runtime, and verifies and
+uploads the results. No local native compilation is required.
 
-After the job finishes, download the generated artifact and copy its contents
-to the plugin root. The workflow also verifies the libraries and can build the
-example APK.
+### Start a build
+
+1. Commit and push the plugin changes, build scripts and MNN submodule pointer
+   to your repository or fork.
+2. Open **Actions → Build Android native libraries → Run workflow**.
+3. Select the branch to build, such as `feat/mnn-android-backends`, and choose
+   the options below.
+4. When **Build and package ARM64 libraries** succeeds, download its artifact
+   from the run's **Artifacts** section.
+
+GitHub requires the workflow to exist on the default branch for manual dispatch.
+Enable Actions first if your fork has not enabled workflows yet.
+
+| Input | Default | Effect |
+| --- | --- | --- |
+| `include_hexagon` | `true` | Build and package the DSP runtimes using the SDK in Docker; disable for a common CPU/GPU bundle |
+| `hexagon_dsp_arch` | `all` | Bundle v73/v75/v79/v81 and automatically match the device, or choose a single target for a smaller APK |
+| `hexagon_toolchain` | `docker` | Pinned Snapdragon Docker image, or `sdk_archive` for a supplied SDK installation |
+| `verify_example_apk` | `false` | Analyze/test Flutter, run Kotlin tests and build/verify the ARM64 example APK in a separate job |
+
+GitHub CLI examples:
+
+```bash
+gh workflow run build-native-android.yml --ref feat/mnn-android-backends
+# Use the Docker image's SDK directly:
+gh workflow run build-native-android.yml --ref feat/mnn-android-backends \
+  -f include_hexagon=true -f hexagon_dsp_arch=all -f verify_example_apk=true
+```
+
+Pushing a `native-v*` tag builds the complete four-architecture bundle and verifies
+the example APK. The workflow uploads Actions
+artifacts; it does not publish GitHub Releases or pub.dev packages.
+
+### Download and install the artifacts
+
+The common artifact is named `mnn-engine-android-arm64-common-<MNN-short-commit>`.
+Hexagon builds use `mnn-engine-android-arm64-hexagon-all-<MNN-short-commit>`; a
+single-target build uses its architecture in place of `all`. The ZIP preserves
+the plugin's directory layout:
+
+```text
+android/src/main/jniLibs/arm64-v8a/     # libMNN.so, libmnn_engine_jni.so, optional stub
+android/src/main/assets/mnn/hexagon/   # optional DSP runtime and manifest
+  manifest.json                      # schema 2; provenance and hashes per architecture
+  v73/ v75/ v79/ v81/                 # each holds a skeleton and both DSP C++ libraries
+native/android-arm64-v8a.json          # versions, flags, hashes, packaged capabilities
+native/github-actions.json            # plugin revision, run URL, SDK/compiler/image provenance
+.native/generated/arm64-v8a/           # unstripped libraries and verification inputs
+SHA256SUMS
+LICENSE
+THIRD_PARTY_NOTICES.md
+third_party_licenses/
+```
+
+Check out the matching plugin revision and initialize the MNN submodule, then
+extract the ZIP into the plugin root. There is no nested tar archive. The
+`.native/generated` files support verification/debugging and are not packaged
+into consumer APKs. Verify in Linux/WSL with:
+
+```bash
+sha256sum --check SHA256SUMS
+bash scripts/verify_mnn_artifacts.sh "$PWD"
+```
+
+Before installing a different artifact, including a single-target or common
+package over an all-architecture package, first remove the old
+generated `android/src/main/jniLibs/arm64-v8a/libMNN_htpops.so` and
+`android/src/main/assets/mnn/hexagon/` to avoid a manifest mismatch.
+
+The run summary reports the actual MNN version, JNI ABI, compiled backends and
+DSP packaging state. Native artifacts are uploaded before the optional example
+job starts, so an example failure does not prevent downloading the libraries.
+Build logs are uploaded as `mnn-native-logs-*` / `mnn-example-logs-*`, including
+logs produced before a failure. Libraries are retained for 30 days; APKs and
+logs for 14 days.
+
+### Hexagon on GitHub-hosted runners
+
+Keep `hexagon_toolchain=docker` to use the Snapdragon image recommended by
+llama.cpp's Snapdragon documentation. The v0.7 image is pinned by digest:
+
+```text
+ghcr.io/snapdragon-toolchain/arm64-android@sha256:91714433626f0d94a926538a1e46ec43756c5b8e3262b91b95df1e812940aed1
+```
+
+It includes **Hexagon SDK 6.6.0.0, Hexagon Clang 19.0.07 and CMake 3.31.6**.
+Actions mounts its NDK r27d read-only for the Android stub. The build container
+has no network access; only the artifact host mount is writable. The
+image takes approximately 10 GB unpacked, so its first pull needs adequate
+network access and disk space. The artifact manifest records SDK/compiler
+versions, the image digest/ID and link verification details.
+
+Actual v73/v75/v79/v81 DSP builds using this image have passed locally. ServLlama
+Debug and example Release APKs containing all four targets have passed artifact validation,
+along with local common/Hexagon bundle, ZIP transfer and consumer checks. The default image is
+stored in `scripts/hexagon/toolchain-image.txt`; `MNN_HEXAGON_DOCKER_IMAGE` can
+override it. No SDK secret is needed for Docker builds.
+
+### Optional: supply an SDK archive
+
+These settings apply only to `hexagon_toolchain=sdk_archive`. Prepare a complete,
+relocatable Linux SDK installation with its matching toolchain, under its license
+terms. The current adapter uses SDK public headers and CMake toolchains; the
+version actually tested here is 6.6.0.0. Archive the installed directory,
+preserving executable modes and internal relative symlinks:
+
+```bash
+tar -C /path/to/sdk-parent -czf hexagon-sdk-linux.tar.gz hexagon-sdk
+sha256sum hexagon-sdk-linux.tar.gz
+```
+
+The archive root or one top-level directory must contain `setup_sdk_env.source`
+and `build/cmake/hexagon_fun.cmake`. Use a prepared installation, not an installer
+or a download/login page. Host the tar.gz / tar.xz archive at a URL the runner
+can download, and configure **Settings → Secrets and variables → Actions**:
+
+| Type | Name | Value |
+| --- | --- | --- |
+| Repository secret | `HEXAGON_SDK_ARCHIVE_URL` | Direct HTTPS download URL; signed URLs must remain valid for the build |
+| Repository variable | `HEXAGON_SDK_ARCHIVE_SHA256` | The matching 64-character archive SHA256 |
+
+Enable `include_hexagon` and select `sdk_archive`. The workflow checks options,
+archive checksums and extraction boundaries before invoking CMake directly. It does not
+upload the SDK installation or its download URL, and the MNN/JNI build cache
+does not cache the SDK. Distribute runtime binaries under the SDK's terms.
+
+Missing SDK configuration, checksum failures or SDK build failures fail the
+Hexagon build. They do not produce a placeholder NPU package. Leave
+`include_hexagon=false` to build the common libraries without the SDK.
+
+Actions cannot validate Android drivers, FastRPC access or device inference.
+Actual SDK/DSP compilation in Docker, workflow syntax and the extraction,
+packaging and link checks have passed locally. This workflow revision has not
+run on a remote runner yet. See ServLlama's implementation report and acceptance
+guide for device validation status.
+
+The example has an `integration_test` development dependency. With Flutter
+3.35.2, keep pub enabled in `flutter build apk --release` so Flutter regenerates
+the release plugin registrant. Adding `--no-pub` can retain a debug registrant
+and fail with a missing integration-test Android class.
 
 ## Local build on Windows + WSL2
 
@@ -91,6 +233,74 @@ pwsh -File .\scripts\verify_mnn_artifacts.ps1 `
 
 At minimum, confirm that the example can initialize the plugin and load a
 model on an ARM64 device.
+
+## Optional Hexagon runtime (Linux / WSL)
+
+With Docker running in WSL/Linux, use the pinned image from the plugin root.
+The default builds v73/v75/v79/v81, with one shared ARM64 stub and automatic device matching:
+
+```bash
+export ANDROID_NDK="$HOME/android-ndk-r27d"
+bash scripts/build_hexagon_docker.sh "$PWD" all
+MNN_HEXAGON_ARTIFACTS="$PWD/.native/hexagon" \
+  bash scripts/package_mnn_artifacts.sh "$PWD"
+```
+
+The wrapper pulls the image only if absent, supports paths containing spaces,
+and runs the container as the repository directory's owner. Parallelism defaults
+to 4 (`MNN_BUILD_JOBS`). Without `ANDROID_NDK`, it uses the image's NDK r29 and
+records that version; this standalone v73 build also passed locally. Actions
+always supplies r27d. If the WSL account lacks
+Docker socket access, run the wrapper using `wsl.exe -d Ubuntu-22.04 -u root --
+...`; the container still runs as the repository owner.
+
+An installed Linux [Qualcomm Hexagon SDK](https://www.qualcomm.com/developer/software/hexagon-npu-sdk)
+can also be used directly:
+
+```bash
+export HEXAGON_SDK_ROOT=/absolute/path/to/hexagon-sdk
+# HEXAGON_TOOLS_ROOT is optional; otherwise read from hexagon_sdk.json.
+bash scripts/build_hexagon_android.sh "$PWD" all
+```
+
+The adapter copies public MNN sources and invokes SDK CMake toolchains and QAIC
+directly, without `setup_sdk_env.source` or `build_cmake`. Community SDK lacks
+the old `utils/examples` helper, so `scripts/hexagon/` supplies MNN's domain
+lookup using `domain_default.h` and the cDSP architecture query using `remote.h`.
+Before cross-compiling, tests use real SDK headers with a simulated FastRPC
+driver to check BCD decoding, query errors and missing capability APIs. When
+the image has no `cc`, these tests use the NDK Clang executable's Linux host
+target. Neither MNN nor SDK files are modified; DSP operators are unchanged.
+
+Build checks cover FastRPC exports, dynamic dependencies and C++ symbol
+resolution. Remaining QuRT/FastRPC, POSIX and unwinder imports are supplied by
+device firmware and recorded in `link-report.json`. Packaging checks the source
+commit, hashes, ELF type, actual DSP architecture flags and stub 16 KB LOAD
+alignment. The outputs are:
+
+- `jniLibs/arm64-v8a/libMNN_htpops.so`: Android stub.
+- `assets/mnn/hexagon/manifest.json`: schema 2, with resource hashes and build provenance for each architecture.
+- `assets/mnn/hexagon/<architecture>/`: DSP skeleton, `libc++.so.1` and `libc++abi.so.1`.
+- `native/android-arm64-v8a.json`: JNI ABI 4; `runtime.hexagon.dspArchitectures` lists the four packaged targets.
+
+The DSP files must remain assets, not ARM64 JNI libraries. On the first backend
+capability request, FastRPC identifies the device ISA. Android verifies and
+extracts only the exact match to `noBackupFilesDir/mnn/hexagon/<manifest-hash>/<architecture>/`
+and sets `ADSP_LIBRARY_PATH`. Failed queries or missing matches make Hexagon
+unavailable without guessing an ISA. The host must keep `useLegacyPackaging=true`.
+OEM `libcdsprpc.so` comes from the device and is not copied into the package.
+SDK runtime redistribution follows the SDK's license terms.
+
+For a smaller targeted test build, pass `v79` instead of `all` and package with
+`MNN_HEXAGON_ARTIFACTS="$PWD/.native/hexagon/v79"`. That bundle enables Hexagon
+only on a matching v79 device. Passing the parent `.native/hexagon` requires
+all four targets and fails if one is missing. Unrelated experiment directories
+such as `v73-ndk-r29` are not automatically included.
+
+Running packaging without `MNN_HEXAGON_ARTIFACTS` produces the common CPU/GPU
+package and removes previous optional Hexagon output. SDK absence does not
+block this common build. Device correctness and performance checks remain
+required even when DSP compilation and packaging succeed.
 
 ## When to rebuild
 

@@ -45,6 +45,12 @@ class MethodChannelMnnEngine extends MnnEnginePlatform {
       MnnRuntimeSnapshot.fromMap(await _invoke<Object?>('getSnapshot'));
 
   @override
+  Future<List<MnnBackendCapability>> getBackendCapabilities() async {
+    final values = await _invoke<List<Object?>>('getBackendCapabilities');
+    return values.map(MnnBackendCapability.fromMap).toList(growable: false);
+  }
+
+  @override
   Future<String> getTestRootPath() => _invoke<String>('getTestRootPath');
 
   @override
@@ -117,8 +123,14 @@ class MethodChannelMnnEngine extends MnnEnginePlatform {
   );
 
   @override
-  Future<MnnModelInfo> loadModel(String modelId) async => MnnModelInfo.fromMap(
-    await _invoke<Object?>('loadModel', {'modelId': modelId}),
+  Future<MnnModelInfo> loadModel(
+    String modelId, {
+    MnnLoadOptions options = const MnnLoadOptions(),
+  }) async => MnnModelInfo.fromMap(
+    await _invoke<Object?>('loadModel', {
+      'modelId': modelId,
+      'options': options.toMap(),
+    }),
   );
 
   @override
@@ -163,11 +175,17 @@ class MethodChannelMnnEngine extends MnnEnginePlatform {
   @override
   Future<void> clearLogs() => _invokeVoid('clearLogs');
 
-  @override
-  Stream<MnnRuntimeEvent> get events =>
-      eventChannel.receiveBroadcastStream().map(MnnRuntimeEvent.fromMap);
+  late final Stream<MnnRuntimeEvent> _events = eventChannel
+      .receiveBroadcastStream()
+      .map(MnnRuntimeEvent.fromMap);
 
   @override
-  Stream<MnnLogEntry> get logs =>
-      logChannel.receiveBroadcastStream().map(MnnLogEntry.fromMap);
+  Stream<MnnRuntimeEvent> get events => _events;
+
+  late final Stream<MnnLogEntry> _logs = logChannel
+      .receiveBroadcastStream()
+      .map(MnnLogEntry.fromMap);
+
+  @override
+  Stream<MnnLogEntry> get logs => _logs;
 }

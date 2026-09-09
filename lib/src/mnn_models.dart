@@ -2,6 +2,65 @@ typedef JsonMap = Map<String, Object?>;
 
 enum MnnServerBindMode { loopback, allInterfaces }
 
+enum MnnBackend { cpu, opencl, vulkan, hexagon }
+
+enum MnnBackendStatus {
+  available,
+  notBuilt,
+  nativeUnavailable,
+  runtimeLibrariesMissing,
+  driverUnavailable,
+  deviceUnsupported,
+  unknown,
+}
+
+/// Applies to the main language model. A model's separate `mllm` configuration
+/// continues to control its multimodal encoder, when provided.
+class MnnLoadOptions {
+  const MnnLoadOptions({this.backend = MnnBackend.cpu});
+
+  final MnnBackend backend;
+
+  JsonMap toMap() => {'backend': backend.name};
+}
+
+/// Runtime initialization is a prerequisite, not a guarantee that every model
+/// or operator will execute on the selected accelerator.
+class MnnBackendCapability {
+  const MnnBackendCapability({
+    required this.backend,
+    required this.compiled,
+    required this.available,
+    required this.status,
+    this.detail = '',
+    this.dspArchitecture,
+  });
+
+  factory MnnBackendCapability.fromMap(Object? value) {
+    final map = _map(value);
+    return MnnBackendCapability(
+      backend: MnnBackend.values.byName(map['backend'] as String),
+      compiled: map['compiled'] == true,
+      available: map['compiled'] == true && map['available'] == true,
+      status: MnnBackendStatus.values.firstWhere(
+        (status) => status.name == map['reason'],
+        orElse: () => MnnBackendStatus.unknown,
+      ),
+      detail: map['detail'] as String? ?? '',
+      dspArchitecture: map['dspArchitecture'] as String?,
+    );
+  }
+
+  final MnnBackend backend;
+  final bool compiled;
+  final bool available;
+  final MnnBackendStatus status;
+  final String detail;
+
+  /// Detected Hexagon ISA (for example `v79`); null if no DSP was identified.
+  final String? dspArchitecture;
+}
+
 Map<String, Object?> _map(Object? value) {
   return Map<String, Object?>.from(value! as Map);
 }
@@ -55,6 +114,7 @@ class MnnModelInfo {
     this.supportsVision = false,
     this.supportsToolCalling = false,
     this.loadDurationMs,
+    this.backend,
     this.vendor,
     this.validationWarnings = const [],
   });
@@ -74,6 +134,9 @@ class MnnModelInfo {
       supportsVision: map['supportsVision'] as bool? ?? false,
       supportsToolCalling: map['supportsToolCalling'] as bool? ?? false,
       loadDurationMs: (map['loadDurationMs'] as num?)?.toInt(),
+      backend: map['backend'] == null
+          ? null
+          : MnnBackend.values.byName(map['backend'] as String),
       validationWarnings:
           (map['validationWarnings'] as List?)?.whereType<String>().toList(
             growable: false,
@@ -94,6 +157,9 @@ class MnnModelInfo {
   final bool supportsVision;
   final bool supportsToolCalling;
   final int? loadDurationMs;
+
+  /// Selected backend of a resident model; null for an unloaded model.
+  final MnnBackend? backend;
   final List<String> validationWarnings;
 }
 

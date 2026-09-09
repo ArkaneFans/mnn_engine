@@ -41,6 +41,13 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+
+    packaging {
+        jniLibs {
+            // The optional Hexagon Android stub is loaded from nativeLibraryDir.
+            useLegacyPackaging = true
+        }
+    }
 }
 
 flutter {

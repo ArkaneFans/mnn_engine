@@ -34,9 +34,12 @@ apply plugin: "kotlin-android"
 def bundledNativeDir = file("src/main/jniLibs/arm64-v8a")
 def bundledMnnLibrary = file("${bundledNativeDir}/libMNN.so")
 def bundledJniLibrary = file("${bundledNativeDir}/libmnn_engine_jni.so")
+def nativeManifest = file("../native/android-arm64-v8a.json")
+def hexagonAssets = file("src/main/assets/mnn/hexagon")
 
 tasks.register("verifyBundledMnnNativeArtifacts") {
-    inputs.files(bundledMnnLibrary, bundledJniLibrary)
+    inputs.files(bundledMnnLibrary, bundledJniLibrary, nativeManifest)
+    inputs.files(fileTree(hexagonAssets), fileTree(bundledNativeDir))
     doLast {
         def missingArtifacts = [bundledMnnLibrary, bundledJniLibrary].findAll {
             !it.isFile() || it.length() == 0
@@ -46,6 +49,63 @@ tasks.register("verifyBundledMnnNativeArtifacts") {
                 "mnn_engine is missing its bundled Android arm64 native libraries: " +
                     missingArtifacts.collect { it.absolutePath }.join(", ")
             )
+        }
+        def manifest = new groovy.json.JsonSlurper().parse(nativeManifest)
+        if ((manifest.build.nativeAdapterAbiVersion as int) < 4) {
+            throw new GradleException("mnn_engine needs native adapter ABI 4. Rebuild and package the native libraries.")
+        }
+        def checkHash = { File artifact, String expected ->
+            if (!artifact.isFile() || java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(artifact.bytes).encodeHex().toString() != expected) {
+                throw new GradleException("mnn_engine artifact checksum mismatch: ${artifact}")
+            }
+        }
+        manifest.libraries.each { name, info ->
+            if (!(name in ["libMNN.so", "libmnn_engine_jni.so", "libMNN_htpops.so"])) {
+                throw new GradleException("Unexpected native artifact: ${name}")
+            }
+            checkHash(file("${bundledNativeDir}/${name}"), info.sha256)
+        }
+        def hexagon = manifest.runtime.hexagon
+        if (hexagon.runtimePackaged) {
+            checkHash(file("${hexagonAssets}/manifest.json"), hexagon.assetManifestSha256)
+            def bundle = new groovy.json.JsonSlurper().parse(file("${hexagonAssets}/manifest.json"))
+            def architectures = hexagon.dspArchitectures
+            if (!(architectures instanceof List) || architectures.isEmpty() ||
+                    architectures.toSet().size() != architectures.size() ||
+                    !["v73", "v75", "v79", "v81"].containsAll(architectures) ||
+                    bundle.schemaVersion != 2 || bundle.stubAbiVersion != 1 || hexagon.stubAbiVersion != 1 ||
+                    bundle.mnnCommit != manifest.source.mnnCommit ||
+                    bundle.stubSha256 != manifest.libraries["libMNN_htpops.so"]?.sha256 ||
+                    bundle.architectures.keySet() != architectures.toSet()) {
+                throw new GradleException("Incompatible Hexagon architecture manifest. Re-package the native libraries.")
+            }
+            def expectedAssets = [:]
+            architectures.each { arch ->
+                def files = bundle.architectures[arch].files
+                if (files.keySet() != ["libMNN_htpops_skel.so", "libc++.so.1", "libc++abi.so.1"].toSet()) {
+                    throw new GradleException("Incomplete Hexagon runtime for ${arch}.")
+                }
+                files.each { name, info -> expectedAssets["${arch}/${name}".toString()] = info }
+            }
+            if (hexagon.assets != expectedAssets) {
+                throw new GradleException("Native and Hexagon asset manifests disagree.")
+            }
+            def actualFiles = fileTree(hexagonAssets).files.collect {
+                hexagonAssets.toPath().relativize(it.toPath()).toString().replace('\\', '/')
+            }.toSet()
+            if (actualFiles != (["manifest.json"] + expectedAssets.keySet().toList()).toSet()) {
+                throw new GradleException("Unexpected or missing Hexagon assets. Re-package the native libraries.")
+            }
+            expectedAssets.each { name, info ->
+                def artifact = file("${hexagonAssets}/${name}")
+                checkHash(artifact, info.sha256)
+                if (artifact.length() != info.sizeBytes) {
+                    throw new GradleException("Hexagon asset size mismatch: ${artifact}")
+                }
+            }
+        } else if (file("${bundledNativeDir}/libMNN_htpops.so").exists() || hexagonAssets.exists()) {
+            throw new GradleException("Untracked Hexagon runtime files found. Re-run scripts/package_mnn_artifacts.sh.")
         }
     }
 }

@@ -1,4 +1,5 @@
 #include "mnn_llm_session_adapter.hpp"
+#include "mnn_backend_support.hpp"
 
 #include <algorithm>
 #include <sstream>
@@ -187,6 +188,12 @@ MnnLlmSessionAdapter::~MnnLlmSessionAdapter() {
 }
 
 bool MnnLlmSessionAdapter::load(std::string* errorMessage) {
+    const auto config = configJson_.empty() ? json::object() : json::parse(configJson_);
+    const auto capability = probeMnnBackend(config.value("backend_type", "cpu"));
+    if (!capability.available) {
+        if (errorMessage) *errorMessage = "backend_unavailable: " + capability.backend + ": " + capability.detail;
+        return false;
+    }
     llm_ = MNN::Transformer::Llm::createLLM(configPath_);
     if (llm_ == nullptr) {
         if (errorMessage != nullptr) *errorMessage = "createLLM failed for " + configPath_;

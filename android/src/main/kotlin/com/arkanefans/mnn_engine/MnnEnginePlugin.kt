@@ -101,7 +101,8 @@ class MnnEnginePlugin :
         }
         try {
             when (call.method) {
-                "initialize" -> result.success(currentService.initializeEngine())
+                "initialize" -> executeIo(result) { currentService.initializeEngine() }
+                "getBackendCapabilities" -> executeIo(result) { currentService.getBackendCapabilities() }
                 "getSnapshot" -> result.success(currentService.getSnapshot())
                 "getTestRootPath" -> result.success(currentService.getTestRootPath())
                 "listImportedModels" -> executeIo(result) { currentService.listImportedModels() }
@@ -156,7 +157,10 @@ class MnnEnginePlugin :
                 "loadModel" -> {
                     val modelId = call.argument<String>("modelId")
                         ?: throw IllegalArgumentException("modelId is required.")
-                    executeIo(result) { currentService.loadModel(modelId) }
+                    val options = com.arkanefans.mnn_engine.runtime.MnnLoadOptions.fromMap(
+                        call.argument<Map<*, *>>("options"),
+                    )
+                    executeIo(result) { currentService.loadModel(modelId, options) }
                 }
                 "unloadModel" -> executeIo(result) {
                     currentService.unloadModel()

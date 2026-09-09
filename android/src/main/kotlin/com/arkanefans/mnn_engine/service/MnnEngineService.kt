@@ -16,6 +16,7 @@ import com.arkanefans.mnn_engine.model.MnnModelImporter
 import com.arkanefans.mnn_engine.model.MnnModelValidator
 import com.arkanefans.mnn_engine.model.MnnTestModelRepository
 import com.arkanefans.mnn_engine.runtime.MnnNativeBridge
+import com.arkanefans.mnn_engine.runtime.MnnLoadOptions
 import com.arkanefans.mnn_engine.runtime.MnnRuntimeManager
 import com.arkanefans.mnn_engine.runtime.RuntimeSnapshot
 import com.arkanefans.mnn_engine.server.MnnOpenAiServer
@@ -108,6 +109,7 @@ class MnnEngineService : Service() {
 
     fun initializeEngine(): Map<String, Any?> {
         directories.ensureCreated()
+        MnnNativeBridge.prepare(this)
         val loaded = MnnNativeBridge.loaded
         val version = if (loaded) {
             runCatching { MnnNativeBridge.version() }.getOrElse { error ->
@@ -140,6 +142,11 @@ class MnnEngineService : Service() {
     }
 
     fun getSnapshot(): Map<String, Any?> = snapshot.toMap()
+
+    fun getBackendCapabilities(): List<Map<String, Any?>> {
+        MnnNativeBridge.prepare(this)
+        return runtimeManager.backendCapabilities()
+    }
 
     fun getTestRootPath(): String {
         directories.ensureCreated()
@@ -260,10 +267,11 @@ class MnnEngineService : Service() {
         }
     }
 
-    fun loadModel(modelId: String): Map<String, Any?> {
+    fun loadModel(modelId: String, options: MnnLoadOptions = MnnLoadOptions()): Map<String, Any?> {
         requireServerStopped("load or switch models")
+        MnnNativeBridge.prepare(this)
         return try {
-            runtimeManager.load(modelId).toMap()
+            runtimeManager.load(modelId, options).toMap()
         } catch (error: MnnEngineOperationException) {
             throw error
         } catch (error: MnnRuntimeManager.GenerationBusyException) {
@@ -271,7 +279,8 @@ class MnnEngineService : Service() {
         } catch (error: IllegalArgumentException) {
             throw MnnEngineOperationException("model_config_not_found", error.message ?: "Model not found.", cause = error)
         } catch (error: Throwable) {
-            throw MnnEngineOperationException("model_load_failed", error.message ?: "MNN model load failed.", cause = error)
+            val code = if (error.message?.startsWith("backend_unavailable:") == true) "backend_unavailable" else "model_load_failed"
+            throw MnnEngineOperationException(code, error.message ?: "MNN model load failed.", cause = error)
         }
     }
 

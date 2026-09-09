@@ -16,6 +16,9 @@ class MnnEngine {
   Future<MnnRuntimeSnapshot> getSnapshot() =>
       MnnEnginePlatform.instance.getSnapshot();
 
+  Future<List<MnnBackendCapability>> getBackendCapabilities() =>
+      MnnEnginePlatform.instance.getBackendCapabilities();
+
   Future<String> getTestRootPath() =>
       MnnEnginePlatform.instance.getTestRootPath();
 
@@ -67,8 +70,10 @@ class MnnEngine {
   Future<MnnModelInfo> renameImportedModel(String modelId, String newName) =>
       MnnEnginePlatform.instance.renameImportedModel(modelId, newName);
 
-  Future<MnnModelInfo> loadModel(String modelId) =>
-      MnnEnginePlatform.instance.loadModel(modelId);
+  Future<MnnModelInfo> loadModel(
+    String modelId, {
+    MnnLoadOptions options = const MnnLoadOptions(),
+  }) => MnnEnginePlatform.instance.loadModel(modelId, options: options);
 
   Future<void> unloadModel() => MnnEnginePlatform.instance.unloadModel();
 
