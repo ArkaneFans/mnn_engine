@@ -15,38 +15,54 @@
       "MNN_SUPPORT_TRANSFORMER_FUSE=ON",
       "MNN_ARM82=ON",
       "MNN_USE_LOGCAT=ON",
+      "MNN_ENGINE_LOG_BRIDGE=ON",
+      "MNN_ENGINE_TOKENIZER_ADDED_TOKENS=ON",
       "MNN_SEP_BUILD=OFF",
       "MNN_KLEIDIAI=OFF",
       "MNN_BUILD_DIFFUSION=OFF",
       "MNN_BUILD_OPENCV=ON",
       "MNN_IMGCODECS=ON",
       "MNN_BUILD_AUDIO=ON",
-      "MNN_OPENCL=OFF",
+      "MNN_OPENCL=ON",
+      "MNN_VULKAN=ON",
+      "MNN_VULKAN_IMAGE=OFF",
+      "MNN_HEXAGON=OFF",
       "MNN_QNN=OFF",
       "MNN_BUILD_TEST=OFF",
       "MNN_BUILD_BENCHMARK=OFF"
     ],
-    "fingerprint": "ace605aadfa9a5753a4af84a",
-    "mnnFingerprint": "a081e644bc0786b798243240",
-    "nativeAdapterAbiVersion": 2
+    "fingerprint": "89d92a4f26ae388671e673fb",
+    "mnnFingerprint": "179263f81d2c06fdb9ce1346",
+    "nativeAdapterAbiVersion": 7
   },
   "libraries": {
     "libMNN.so": {
-      "buildId": "957bcd8e0cf050853a97275a39849a4fb1d50045",
-      "sha256": "0ae6f1b8ab2c3fbc5b7dd8120db145b6bed82ccc6f4154d2cbb149596182419a",
-      "sizeBytes": 5204224
+      "buildId": "c7fec4c7c2454cf9b43e26616f18680b84c595bc",
+      "sha256": "ff396046e26e0f045560580cf8615a9537ebc979871b383a65a6fe971826a08c",
+      "sizeBytes": 9403328
     },
     "libmnn_engine_jni.so": {
-      "buildId": "f13d9fe505840f85ec448bed403d0adacef57ca3",
-      "sha256": "6ad72776e816dd82931a4fd17d9272e1db4d0af46bff742f831983ed7d9bb07b",
-      "sizeBytes": 215112
+      "buildId": "bd59c6b278ab3ac2a1b720e48f315d6983632501",
+      "sha256": "cebbbe33f386e721d8d7eda5d8af738f1c2a5378d7378ad55256f13fb90120bc",
+      "sizeBytes": 409160
     }
+  },
+  "runtime": {
+    "compiledBackends": [
+      "cpu",
+      "opencl",
+      "vulkan"
+    ],
+    "hexagon": {
+      "runtimePackaged": false
+    },
+    "vulkanMode": "buffer"
   },
   "schemaVersion": 1,
   "source": {
-    "mnnCommit": "cc20f672af9e177e2fa338c332dc097de2fc9264",
+    "mnnCommit": "d407447ed56c4121a11ccbd266dc184ca1ead0c2",
     "mnnRepository": "https://github.com/alibaba/MNN",
-    "mnnVersion": "3.6.0"
+    "mnnVersion": "3.6.1"
   },
   "target": {
     "abi": "arm64-v8a",

@@ -36,6 +36,8 @@ NDK, Linux, or WSL to build.
   content, and cancellation of the active generation.
 - Ships native libraries validated for AArch64, JNI exports, ELF dependencies,
   and Android 16 KB page compatibility.
+- Selects CPU, OpenCL or Vulkan for LLM inference, with device capability checks.
+- Supports an experimental Hexagon backend when matching SDK-built runtime assets are packaged.
 
 ## Platform support
 
@@ -46,8 +48,8 @@ NDK, Linux, or WSL to build.
 | Minimum Android version | API 28 |
 | Compile SDK used by the plugin | 35 |
 | Flutter | 3.35.0 or newer |
-| MNN | 3.6.0 at commit `cc20f672af9e177e2fa338c332dc097de2fc9264` |
-| Inference backend | CPU |
+| MNN | 3.6.1 at commit `d407447ed56c4121a11ccbd266dc184ca1ead0c2` |
+| Inference backend | CPU (default), OpenCL, Vulkan buffer; optional Hexagon |
 | Active models | One at a time |
 | Concurrent generations | One at a time |
 
@@ -60,7 +62,7 @@ Add the package to your Flutter application:
 
 ```yaml
 dependencies:
-  mnn_engine: ^0.0.2
+  mnn_engine: ^0.1.0
 ```
 
 Then run:
@@ -162,6 +164,41 @@ downloaded a model into private storage, use:
 final imported = await engine.importModelFromPath(modelDirectory.path);
 ```
 
+## Choosing an inference backend
+
+Query capabilities before offering an accelerator. `compiled` means that its
+MNN host backend is included; `available` means that runtime initialization
+passed on this device. Neither guarantees compatibility with every model.
+
+```dart
+final capabilities = await engine.getBackendCapabilities();
+final opencl = capabilities.firstWhere((item) => item.backend == MnnBackend.opencl);
+if (opencl.available) {
+  await engine.loadModel(
+    importedModel.modelId,
+    options: const MnnLoadOptions(backend: MnnBackend.opencl),
+  );
+}
+```
+
+The API server must be stopped before loading or changing a backend. Omitted
+options select CPU. Unavailable backends return `backend_unavailable`; the
+plugin does not silently retry on CPU. The resident model's `backend` field
+records the selection. MNN can still schedule unsupported operators on CPU.
+A model's separate `mllm` encoder configuration is preserved; otherwise Omni
+shares the main backend. Validate vision models on the chosen accelerator.
+
+Default packages contain CPU/OpenCL/Vulkan only; Hexagon is Experimental.
+Explicit experimental builds can bundle **v73, v75, v79 and v81** in one APK. The
+plugin queries the device's cDSP architecture and extracts/loads only the exact
+match; `MnnBackendCapability.dspArchitecture` reports the detected ISA. No manual
+architecture selection is needed. A compatible Qualcomm DSP with FP16 HMX and
+OEM FastRPC access is still required. Builds with `include_hexagon=false` disable
+the host backend and omit the stub/DSP assets. See
+[native build instructions](doc/BUILDING_NATIVE.md).
+For Hexagon, the host app must set `packaging.jniLibs.useLegacyPackaging = true`
+so the Android stub exists in `nativeLibraryDir`.
+
 ## Model directory
 
 The plugin imports a complete MNN model directory rather than a single `.mnn`
@@ -245,6 +282,13 @@ SHA-256 hashes are recorded in
 [`native/android-arm64-v8a.json`](native/android-arm64-v8a.json). Maintainers
 can reproduce them locally or with the repository's GitHub Actions workflow;
 consumer builds never invoke that toolchain.
+
+Run **Build Android native libraries** in Actions to download the `.so` files,
+checksums and build logs. The default `include_hexagon=false` builds CPU/GPU only,
+including on `native-v*` tags. Explicit opt-in builds all four DSP runtimes with
+the pinned SDK Docker image; no SDK secret is required. A supplied SDK archive
+is also supported. Example APK verification is optional. See the
+[GitHub Actions instructions](doc/BUILDING_NATIVE.md#recommended-github-actions).
 
 ## Additional resources
 

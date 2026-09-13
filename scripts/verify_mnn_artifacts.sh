@@ -50,6 +50,10 @@ verify_elf "${jni_library}"
 
 required_symbols=(
     'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeBridge_nativeGetVersion'
+    'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeBridge_nativeConfigureBackends'
+    'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeBridge_nativeDetectHexagonArchitecture'
+    'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeBridge_nativeGetBackendCapabilities'
+    'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeBridge_nativeTakeDiagnosticLogs'
     'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeSession_nativeCreate'
     'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeSession_nativeGenerate'
     'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeSession_nativeCancel'
@@ -59,6 +63,12 @@ required_symbols=(
 symbols="$("${readelf_bin}" -Ws "${jni_library}")"
 for symbol in "${required_symbols[@]}"; do
     grep -q "${symbol}" <<<"${symbols}" || fail "missing JNI export ${symbol}"
+done
+
+mnn_symbols="$("${readelf_bin}" --dyn-syms -W "${mnn_library}")"
+for symbol in mnn_engine_set_native_log_sink; do
+    awk -v name="${symbol}" '$7 != "UND" && $8 == name { found = 1 } END { exit !found }' \
+        <<<"${mnn_symbols}" || fail "libMNN.so is missing native log bridge export ${symbol}"
 done
 
 python3 - "${build_info}" "${plugin_root}/MNN" <<'PY'
@@ -95,13 +105,20 @@ if info["androidPlatform"] != "android-28":
     raise SystemExit(f"unexpected Android platform in build info: {info['androidPlatform']}")
 if info["cmakeVersion"] != "3.22.1":
     raise SystemExit(f"unexpected CMake version in build info: {info['cmakeVersion']}")
-if int(info["nativeAdapterAbiVersion"]) < 2:
-    raise SystemExit("nativeAdapterAbiVersion must be at least 2")
+if int(info["nativeAdapterAbiVersion"]) < 7:
+    raise SystemExit("nativeAdapterAbiVersion must be at least 7")
 flags = set(info["cmakeFlags"])
+if len(flags & {"MNN_HEXAGON=ON", "MNN_HEXAGON=OFF"}) != 1:
+    raise SystemExit("build info must specify exactly one MNN_HEXAGON mode")
 for expected in (
     "MNN_BUILD_FOR_ANDROID_COMMAND=ON",
+    "MNN_ENGINE_LOG_BRIDGE=ON",
+    "MNN_ENGINE_TOKENIZER_ADDED_TOKENS=ON",
     "MNN_BUILD_LLM_OMNI=ON",
     "MNN_KLEIDIAI=OFF",
+    "MNN_OPENCL=ON",
+    "MNN_VULKAN=ON",
+    "MNN_VULKAN_IMAGE=OFF",
     "ANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
 ):
     if expected not in flags:
@@ -155,6 +172,62 @@ if [[ -n "${apk_path}" ]]; then
     source_test_page_hash="$(sha256sum "${plugin_root}/android/src/main/assets/mnn_test_page.html" | awk '{print $1}')"
     [[ "${packaged_test_page_hash}" == "${source_test_page_hash}" ]] ||
         fail "packaged mnn_test_page.html does not match the plugin asset"
+    python3 - "${plugin_root}/native/android-arm64-v8a.json" "${apk_path}" "${packaged_dir}" "${plugin_root}/scripts" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+import zipfile
+
+sys.path.insert(0, sys.argv[4])
+from hexagon_artifacts import validate_packaged_manifest, verify_elf
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    manifest = json.load(stream)
+hexagon = manifest["runtime"]["hexagon"]
+with zipfile.ZipFile(sys.argv[2]) as apk:
+    stub = "lib/arm64-v8a/libMNN_htpops.so"
+    dsp_names = {"libMNN_htpops_skel.so", "libc++.so.1", "libc++abi.so.1"}
+    if any(name.startswith("lib/") and pathlib.PurePosixPath(name).name in dsp_names for name in apk.namelist()):
+        raise SystemExit("DSP libraries must be APK assets, not Android JNI libraries")
+    if hexagon["runtimePackaged"]:
+        if stub not in apk.namelist():
+            raise SystemExit("APK is missing the Hexagon Android stub")
+        (pathlib.Path(sys.argv[3]) / "libMNN_htpops.so").write_bytes(apk.read(stub))
+        prefix = "assets/mnn/hexagon/"
+        manifest_bytes = apk.read(prefix + "manifest.json")
+        if hashlib.sha256(manifest_bytes).hexdigest() != hexagon["assetManifestSha256"]:
+            raise SystemExit("APK Hexagon manifest checksum mismatch")
+        files = validate_packaged_manifest(manifest, json.loads(manifest_bytes))
+        expected = {"manifest.json": hexagon["assetManifestSha256"]}
+        expected.update({name: item["sha256"] for name, item in files.items()})
+        actual = [name[len(prefix):] for name in apk.namelist() if name.startswith(prefix) and not name.endswith("/")]
+        if set(actual) != set(expected) or len(actual) != len(expected):
+            raise SystemExit("APK contains unexpected or missing Hexagon assets")
+        for name, digest in expected.items():
+            data = apk.read(prefix + name)
+            if hashlib.sha256(data).hexdigest() != digest:
+                raise SystemExit("APK Hexagon asset checksum mismatch: " + name)
+            if name != "manifest.json":
+                if len(data) != files[name]["sizeBytes"]:
+                    raise SystemExit("APK Hexagon asset size mismatch: " + name)
+                output = pathlib.Path(sys.argv[3]) / "dsp" / name
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_bytes(data)
+                verify_elf(output, 164, name.split("/")[0])
+    elif stub in apk.namelist() or any(name.startswith("assets/mnn/hexagon/") for name in apk.namelist()):
+        raise SystemExit("APK unexpectedly contains Hexagon runtime files")
+PY
+    if [[ -f "${packaged_dir}/libMNN_htpops.so" ]]; then
+        verify_elf "${packaged_dir}/libMNN_htpops.so"
+        [[ "$(build_id "${plugin_root}/android/src/main/jniLibs/arm64-v8a/libMNN_htpops.so")" == \
+           "$(build_id "${packaged_dir}/libMNN_htpops.so")" ]] || fail "packaged Hexagon stub Build ID mismatch"
+        "${readelf_bin}" -dW "${packaged_dir}/libMNN_htpops.so" | grep -q 'Shared library: \[libcdsprpc.so\]' ||
+            fail "packaged Hexagon stub does not depend on the OEM FastRPC driver"
+        stub_symbols="$("${readelf_bin}" --dyn-syms --wide "${packaged_dir}/libMNN_htpops.so")"
+        grep -q 'GLOBAL.*DEFAULT.*mnn_engine_query_hexagon_arch' <<<"${stub_symbols}" ||
+            fail "packaged Hexagon stub is missing its architecture-query export"
+    fi
     cleanup_packaged
     trap - EXIT
 fi

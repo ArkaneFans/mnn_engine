@@ -13,6 +13,7 @@ data class MnnModelInfo(
     val supportsVision: Boolean = false,
     val supportsToolCalling: Boolean = false,
     val loadDurationMs: Long? = null,
+    val backend: String? = null,
     val validationWarnings: List<String> = emptyList(),
 ) {
     fun toMap(): Map<String, Any?> = mapOf(
@@ -28,6 +29,7 @@ data class MnnModelInfo(
         "supportsVision" to supportsVision,
         "supportsToolCalling" to supportsToolCalling,
         "loadDurationMs" to loadDurationMs,
+        "backend" to backend,
         "validationWarnings" to validationWarnings,
     )
 }

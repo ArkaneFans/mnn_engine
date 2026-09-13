@@ -29,6 +29,8 @@
 - 提供 OpenAI 兼容的 `/v1/models` 和 `/v1/chat/completions`。
 - 支持 SSE 流式响应、视觉输入、function tools、推理内容和取消当前生成。
 - Native 库经过 AArch64、JNI exports、ELF 依赖和 Android 16 KB page 校验。
+- 支持 CPU、OpenCL、Vulkan 推理后端选择和设备可用性检测。
+- 支持实验性 Hexagon 接入，需额外打包与 MNN 匹配的 SDK 运行库。
 
 ## 支持范围
 
@@ -39,8 +41,8 @@
 | Android 最低版本 | API 28 |
 | 插件 Compile SDK | 35 |
 | Flutter | 3.35.0 或更高版本 |
-| MNN | 3.6.0，commit `cc20f672af9e177e2fa338c332dc097de2fc9264` |
-| 推理后端 | CPU |
+| MNN | 3.6.1，commit `d407447ed56c4121a11ccbd266dc184ca1ead0c2` |
+| 推理后端 | CPU（默认）、OpenCL、Vulkan buffer；可选 Hexagon |
 | 活跃模型 | 同一时间一个 |
 | 并发生成 | 同一时间一个 |
 
@@ -52,7 +54,7 @@
 
 ```yaml
 dependencies:
-  mnn_engine: ^0.0.2
+  mnn_engine: ^0.1.0
 ```
 
 然后执行：
@@ -150,6 +152,36 @@ Activity 时调用。如果宿主应用已经把模型下载到私有目录，�
 final imported = await engine.importModelFromPath(modelDirectory.path);
 ```
 
+## 选择推理后端
+
+先查询设备能力，再开放对应选项。`compiled` 表示 MNN host backend 已编入，
+`available` 表示运行时初始化通过；两者均不能保证任意模型都兼容。
+
+```dart
+final capabilities = await engine.getBackendCapabilities();
+final opencl = capabilities.firstWhere((item) => item.backend == MnnBackend.opencl);
+if (opencl.available) {
+  await engine.loadModel(
+    importedModel.modelId,
+    options: const MnnLoadOptions(backend: MnnBackend.opencl),
+  );
+}
+```
+
+加载或切换后端前必须停止 API 服务。不传选项时使用 CPU；后端不可用时返回
+`backend_unavailable`，不会静默重试 CPU。活动模型的 `backend` 字段记录加载选择，
+不代表全部算子都在加速器上执行。模型独立的 `mllm` 编码器配置会保留，未配置时
+Omni 共享主后端，因此视觉模型也需要在所选后端上单独验收。
+
+默认包仅包含 CPU/OpenCL/Vulkan，Hexagon 为实验性。显式开启的实验构建
+可在同一 APK 中包含 **v73、v75、v79、v81** 四套 Hexagon DSP 运行库。插件查询
+真实 cDSP 架构，只解包和加载精确匹配的一套，无需手工选择架构；能力项的
+`dspArchitecture` 返回识别结果。仍需支持 FP16 HMX 的高通 DSP 和 OEM FastRPC
+访问能力。使用 `include_hexagon=false` 构建的通用包关闭主机后端，也不包含 stub/DSP 资源。
+具体操作见 [Native 构建说明](doc/BUILDING_NATIVE_ZH.md) 与
+[后端设计文档](doc/ANDROID_BACKENDS_DESIGN_ZH.md)。启用 Hexagon 的宿主应用必须设置
+`packaging.jniLibs.useLegacyPackaging = true`，确保 stub 存在于 `nativeLibraryDir`。
+
 ## 模型目录
 
 插件导入的是完整 MNN 模型目录，而不是单个 `.mnn` 文件。典型文本模型结构如下：
@@ -226,6 +258,11 @@ android/src/main/jniLibs/arm64-v8a/
 [`native/android-arm64-v8a.json`](native/android-arm64-v8a.json) 中。维护者可以
 在本地或 GitHub Actions 中重新生成这些文件，普通消费者的 Gradle 构建不会触发
 Native 编译。
+
+在 Actions 中运行 **Build Android native libraries** 可直接下载 `.so`、校验清单和
+构建日志；默认 `include_hexagon=false`，包括 `native-v*` 标签构建，均只编译 CPU/GPU。
+显式开启后使用自带 SDK 的固定 Docker 镜像编译四套 DSP 运行库，无需 SDK secret；也支持自行提供 SDK 压缩包。
+example APK 验证可单独开启。操作步骤见 [GitHub Actions 构建说明](doc/BUILDING_NATIVE_ZH.md#推荐使用-github-actions)。
 
 ## 其他资源
 

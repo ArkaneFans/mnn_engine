@@ -39,6 +39,7 @@ private:
 
     std::string configPath_;
     std::string configJson_;
+    std::string backend_ = "cpu";
     MNN::Transformer::Llm* llm_ = nullptr;
     std::atomic<bool> cancelRequested_{false};
     std::mutex generationMutex_;

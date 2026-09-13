@@ -101,7 +101,8 @@ class MnnEnginePlugin :
         }
         try {
             when (call.method) {
-                "initialize" -> result.success(currentService.initializeEngine())
+                "initialize" -> executeIo(result) { currentService.initializeEngine() }
+                "getBackendCapabilities" -> executeIo(result) { currentService.getBackendCapabilities() }
                 "getSnapshot" -> result.success(currentService.getSnapshot())
                 "getTestRootPath" -> result.success(currentService.getTestRootPath())
                 "listImportedModels" -> executeIo(result) { currentService.listImportedModels() }
@@ -156,7 +157,10 @@ class MnnEnginePlugin :
                 "loadModel" -> {
                     val modelId = call.argument<String>("modelId")
                         ?: throw IllegalArgumentException("modelId is required.")
-                    executeIo(result) { currentService.loadModel(modelId) }
+                    val options = com.arkanefans.mnn_engine.runtime.MnnLoadOptions.fromMap(
+                        call.argument<Map<*, *>>("options"),
+                    )
+                    executeIo(result) { currentService.loadModel(modelId, options) }
                 }
                 "unloadModel" -> executeIo(result) {
                     currentService.unloadModel()
@@ -197,7 +201,6 @@ class MnnEnginePlugin :
                 )
             }
         } catch (error: Throwable) {
-            currentService.logStore.error("plugin", "${call.method} failed", error)
             sendError(result, error)
         }
     }
@@ -210,7 +213,6 @@ class MnnEnginePlugin :
             val outcome = runCatching(operation)
             mainHandler.post {
                 outcome.onSuccess(result::success).onFailure { error ->
-                    service?.logStore?.error("plugin", "Background operation failed", error)
                     sendError(result, error)
                 }
             }
@@ -286,7 +288,6 @@ class MnnEnginePlugin :
             }
             mainHandler.post {
                 operation.onSuccess(result::success).onFailure { error ->
-                    service?.logStore?.error("plugin", "Model import failed", error)
                     sendError(result, error, fallbackCode = "model_import_failed")
                 }
             }
@@ -325,9 +326,18 @@ class MnnEnginePlugin :
             error is IllegalArgumentException -> "invalid_argument"
             else -> fallbackCode
         }
+        val message = error.message ?: error.javaClass.simpleName
+        // Model/runtime layers attach context; the method-channel boundary
+        // owns the operation log so errors are not repeated at every layer.
+        when (code) {
+            "invalid_argument", "model_busy", "backend_unavailable", "model_backend_incompatible",
+            "model_name_exists", "invalid_model_name", "model_active", "model_not_found",
+            "model_config_not_found", "port_in_use" -> service?.logStore?.warn("plugin", "$code: $message")
+            else -> service?.logStore?.error("plugin", "$code: $message")
+        }
         result.error(
             code,
-            error.message ?: error.javaClass.simpleName,
+            message,
             operationError?.details,
         )
     }

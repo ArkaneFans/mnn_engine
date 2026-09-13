@@ -1,7 +1,11 @@
 #include "mnn_llm_session_adapter.hpp"
+#include "mnn_backend_support.hpp"
+#include "mnn_native_diagnostics.hpp"
+#include "mnn_hexagon_model_check.hpp"
 
 #include <algorithm>
 #include <sstream>
+#include <stdexcept>
 #include <streambuf>
 #include <utility>
 
@@ -14,6 +18,38 @@ using nlohmann::json;
 namespace {
 
 constexpr int kNoTokenLimit = -1;
+
+const char* statusName(LlmStatus status) {
+    switch (status) {
+        case LlmStatus::NOT_LOADED: return "NOT_LOADED";
+        case LlmStatus::RUNNING: return "RUNNING";
+        case LlmStatus::NORMAL_FINISHED: return "NORMAL_FINISHED";
+        case LlmStatus::MAX_TOKENS_FINISHED: return "MAX_TOKENS_FINISHED";
+        case LlmStatus::USER_CANCEL: return "USER_CANCEL";
+        case LlmStatus::INTERNAL_ERROR: return "INTERNAL_ERROR";
+        case LlmStatus::TIMEOUT: return "TIMEOUT";
+    }
+    return "UNKNOWN";
+}
+
+bool hasRuntimeError(const MNN::Transformer::LlmContext* context) {
+    return context == nullptr || context->status == LlmStatus::NOT_LOADED ||
+            context->status == LlmStatus::INTERNAL_ERROR || context->status == LlmStatus::TIMEOUT;
+}
+
+std::string contextSummary(const MNN::Transformer::LlmContext* context) {
+    if (context == nullptr) return "context=unavailable";
+    std::ostringstream message;
+    // Counts only: never log prompts, token IDs, or generated text.
+    message << "status=" << statusName(context->status) << '(' << static_cast<int>(context->status) << ')'
+            << ", prompt_tokens=" << context->prompt_len << ", generated_tokens=" << context->gen_seq_len;
+    return message.str();
+}
+
+[[noreturn]] void failGeneration(const std::string& reason, const std::string& details) {
+    // The Kotlin boundary logs this error once, together with MNN's own logs.
+    throw std::runtime_error(reason + "; " + details);
+}
 
 class Utf8StreamProcessor {
 public:
@@ -187,6 +223,14 @@ MnnLlmSessionAdapter::~MnnLlmSessionAdapter() {
 }
 
 bool MnnLlmSessionAdapter::load(std::string* errorMessage) {
+    clearMnnNativeDiagnostics();
+    const auto config = configJson_.empty() ? json::object() : json::parse(configJson_);
+    backend_ = config.value("backend_type", "cpu");
+    const auto capability = probeMnnBackend(backend_);
+    if (!capability.available) {
+        if (errorMessage) *errorMessage = "backend_unavailable: " + capability.backend + ": " + capability.detail;
+        return false;
+    }
     llm_ = MNN::Transformer::Llm::createLLM(configPath_);
     if (llm_ == nullptr) {
         if (errorMessage != nullptr) *errorMessage = "createLLM failed for " + configPath_;
@@ -196,8 +240,23 @@ bool MnnLlmSessionAdapter::load(std::string* errorMessage) {
         if (errorMessage != nullptr) *errorMessage = "MNN rejected the runtime config";
         return false;
     }
-    if (!llm_->load()) {
-        if (errorMessage != nullptr) *errorMessage = "MNN model load returned false";
+    if (backend_ == "hexagon") {
+        const auto modelInfo = inspectMnnHexagonModel(configPath_, llm_->dump_config());
+        if (modelInfo.nonC4AttentionOps > 0) {
+            const auto message = "model_backend_incompatible: MNN Hexagon requires Transformer C4 attention; found " +
+                    std::to_string(modelInfo.nonC4AttentionOps) + " Attention op(s) with output_c4=false, first=" +
+                    modelInfo.firstNonC4Attention +
+                    ". Re-export with Transformer C4 enabled (recommended: --quant_bit 4 --quant_block 64 --sym), "
+                    "or select CPU/OpenCL/Vulkan.";
+            if (errorMessage != nullptr) *errorMessage = message;
+            return false;
+        }
+    }
+    const bool loaded = llm_->load();
+    if (!loaded || hasRuntimeError(llm_->getContext())) {
+        if (errorMessage != nullptr) {
+            *errorMessage = "MNN model load failed; stage=load, backend=" + backend_ + ", " + contextSummary(llm_->getContext());
+        }
         return false;
     }
     return true;
@@ -209,6 +268,7 @@ MnnLlmSessionAdapter::Metrics MnnLlmSessionAdapter::generate(
         int maxTokens,
         const std::function<bool(const std::string&)>& onToken) {
     std::lock_guard<std::mutex> lock(generationMutex_);
+    clearMnnNativeDiagnostics();
     if (llm_ == nullptr) throw std::runtime_error("Model is not loaded");
     if (!requestConfigJson.empty() && !llm_->set_config(requestConfigJson)) {
         throw std::invalid_argument("MNN rejected request config");
@@ -220,6 +280,10 @@ MnnLlmSessionAdapter::Metrics MnnLlmSessionAdapter::generate(
     cancelRequested_.store(false);
     llm_->reset();
     restoreRunningStatusIfTerminal();
+    if (hasRuntimeError(llm_->getContext())) {
+        failGeneration("MNN generation cannot start; reload the model after a runtime error",
+                "stage=request_begin, backend=" + backend_ + ", " + contextSummary(llm_->getContext()));
+    }
 
     SteppingStreamBuffer streamBuffer(onToken);
     std::ostream output(&streamBuffer);
@@ -228,6 +292,12 @@ MnnLlmSessionAdapter::Metrics MnnLlmSessionAdapter::generate(
         return maxTokens == kNoTokenLimit || generated < maxTokens;
     };
     llm_->response(messages, &output, "<eop>", 0);
+    // response(..., 0) performs prefill. A failed forward leaves an error
+    // status, and generate(1) would just return without explaining the cause.
+    if (hasRuntimeError(llm_->getContext())) {
+        failGeneration("MNN generation failed during prefill",
+                "stage=prefill, backend=" + backend_ + ", " + contextSummary(llm_->getContext()));
+    }
 
     auto resolveStep = [&]() {
         auto* context = const_cast<MNN::Transformer::LlmContext*>(llm_->getContext());
@@ -253,12 +323,20 @@ MnnLlmSessionAdapter::Metrics MnnLlmSessionAdapter::generate(
         const int beforeGenerated = beforeContext == nullptr ? generated : beforeContext->gen_seq_len;
         llm_->generate(1);
         const auto* afterContext = llm_->getContext();
-        if (afterContext == nullptr) throw std::runtime_error("MNN generation context is unavailable");
+        const auto stepDetails = [&]() {
+            return "stage=decode, backend=" + backend_ + ", before_generated=" +
+                    std::to_string(beforeGenerated) + ", " + contextSummary(afterContext);
+        };
+        // Check errors even if this step produced a token or exhausted the
+        // budget. A failing final forward must not be reported as success.
+        if (hasRuntimeError(afterContext)) {
+            failGeneration("MNN generation failed during decode", stepDetails());
+        }
         generated = afterContext->gen_seq_len;
         resolveStep();
         if (!cancelRequested_.load() && !streamBuffer.stopRequested() &&
             !streamBuffer.finished() && hasTokenBudget() && generated <= beforeGenerated) {
-            throw std::runtime_error("MNN generation stopped before reaching an end marker");
+            failGeneration("MNN generation stopped before reaching an end marker", stepDetails());
         }
     }
     streamBuffer.finalizePendingEop();

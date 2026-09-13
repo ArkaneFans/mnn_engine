@@ -55,7 +55,7 @@ internal class MnnMediaStager(
                 }
                 copy
             }
-            logStore.debug(TAG, "Staged $imageIndex image(s) for $requestId")
+            if (imageIndex > 0) logStore.debug(TAG, "Staged $imageIndex image(s) for $requestId")
             StagedMessages(prepared, requestDir)
         } catch (error: Throwable) {
             requestDir.deleteRecursively()

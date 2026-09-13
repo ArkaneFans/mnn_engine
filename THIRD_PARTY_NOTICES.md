@@ -9,14 +9,34 @@ SHA-256 digests for the bundled artifacts.
 ## Alibaba MNN
 
 - Project: [Alibaba MNN](https://github.com/alibaba/MNN)
-- Version: 3.6.0
-- Commit: `cc20f672af9e177e2fa338c332dc097de2fc9264`
+- Version: 3.6.1
+- Commit: `d407447ed56c4121a11ccbd266dc184ca1ead0c2`
 - Copyright: Copyright 2018 Alibaba Group
 - License: Apache License 2.0
 
 The Apache License 2.0 text is included in this package as [`LICENSE`](LICENSE).
 `mnn_engine` is an independent community plugin and is not an official Alibaba
 Flutter package.
+
+## Optional Hexagon runtime
+
+The common package compiles MNN's Hexagon host backend but does not include
+the Qualcomm SDK or SDK-built DSP libraries. Optional Hexagon packages add
+one SDK-built ARM64 stub and v73/v75/v79/v81 DSP skeletons with their matching
+DSP C++ runtimes; their provenance and
+hashes are recorded in the native and asset manifests. Distributors of those
+optional artifacts must follow the Qualcomm SDK runtime redistribution terms.
+The device's OEM FastRPC driver is not redistributed by this package.
+
+The default optional build uses the Snapdragon toolchain v0.7 container
+(`ghcr.io/snapdragon-toolchain/arm64-android`), pinned to digest
+`sha256:91714433626f0d94a926538a1e46ec43756c5b8e3262b91b95df1e812940aed1`.
+It includes Hexagon SDK 6.6.0.0 and Hexagon Clang 19.0.07. Native bundles contain
+the runtime artifacts listed above, without the SDK installation, compiler
+binaries or container image.
+The asset manifest records the actual SDK, compiler, Android NDK, image ID,
+adapter hashes and expected firmware dependencies for each architecture.
+Only the matching DSP runtime is extracted and loaded on a device.
 
 ## FlatBuffers
 

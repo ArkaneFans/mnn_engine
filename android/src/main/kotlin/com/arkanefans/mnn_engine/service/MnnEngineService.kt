@@ -16,6 +16,7 @@ import com.arkanefans.mnn_engine.model.MnnModelImporter
 import com.arkanefans.mnn_engine.model.MnnModelValidator
 import com.arkanefans.mnn_engine.model.MnnTestModelRepository
 import com.arkanefans.mnn_engine.runtime.MnnNativeBridge
+import com.arkanefans.mnn_engine.runtime.MnnLoadOptions
 import com.arkanefans.mnn_engine.runtime.MnnRuntimeManager
 import com.arkanefans.mnn_engine.runtime.RuntimeSnapshot
 import com.arkanefans.mnn_engine.server.MnnOpenAiServer
@@ -73,7 +74,7 @@ class MnnEngineService : Service() {
         )
         directories.ensureCreated()
         cleanupStaging()
-        logStore.info(TAG, "Service created")
+        logStore.debug(TAG, "Service created")
     }
 
     override fun onBind(intent: Intent?): IBinder = LocalBinder()
@@ -108,6 +109,7 @@ class MnnEngineService : Service() {
 
     fun initializeEngine(): Map<String, Any?> {
         directories.ensureCreated()
+        MnnNativeBridge.prepare(this)
         val loaded = MnnNativeBridge.loaded
         val version = if (loaded) {
             runCatching { MnnNativeBridge.version() }.getOrElse { error ->
@@ -126,7 +128,6 @@ class MnnEngineService : Service() {
                 lastError = if (loaded) null else MnnNativeBridge.loadFailureMessage(),
             ),
         )
-        logStore.info(TAG, "Engine initialized, nativeLoaded=$loaded, version=$version")
         return mapOf(
             "pluginVersion" to BuildConfig.MNN_ENGINE_VERSION,
             "mnnVersion" to version.substringBefore(" (").ifBlank { "unavailable" },
@@ -140,6 +141,11 @@ class MnnEngineService : Service() {
     }
 
     fun getSnapshot(): Map<String, Any?> = snapshot.toMap()
+
+    fun getBackendCapabilities(): List<Map<String, Any?>> {
+        MnnNativeBridge.prepare(this)
+        return runtimeManager.backendCapabilities()
+    }
 
     fun getTestRootPath(): String {
         directories.ensureCreated()
@@ -260,10 +266,11 @@ class MnnEngineService : Service() {
         }
     }
 
-    fun loadModel(modelId: String): Map<String, Any?> {
+    fun loadModel(modelId: String, options: MnnLoadOptions = MnnLoadOptions()): Map<String, Any?> {
         requireServerStopped("load or switch models")
+        MnnNativeBridge.prepare(this)
         return try {
-            runtimeManager.load(modelId).toMap()
+            runtimeManager.load(modelId, options).toMap()
         } catch (error: MnnEngineOperationException) {
             throw error
         } catch (error: MnnRuntimeManager.GenerationBusyException) {
@@ -271,7 +278,12 @@ class MnnEngineService : Service() {
         } catch (error: IllegalArgumentException) {
             throw MnnEngineOperationException("model_config_not_found", error.message ?: "Model not found.", cause = error)
         } catch (error: Throwable) {
-            throw MnnEngineOperationException("model_load_failed", error.message ?: "MNN model load failed.", cause = error)
+            val code = when {
+                error.message?.startsWith("backend_unavailable:") == true -> "backend_unavailable"
+                error.message?.startsWith("model_backend_incompatible:") == true -> "model_backend_incompatible"
+                else -> "model_load_failed"
+            }
+            throw MnnEngineOperationException(code, error.message ?: "MNN model load failed.", cause = error)
         }
     }
 
@@ -508,7 +520,7 @@ class MnnEngineService : Service() {
         runCatching { openAiServer.stop() }
         clearForegroundSession(stopService = false)
         runtimeManager.release()
-        logStore.info(TAG, "Service destroyed")
+        logStore.debug(TAG, "Service destroyed")
         runtimeListeners.clear()
         super.onDestroy()
     }

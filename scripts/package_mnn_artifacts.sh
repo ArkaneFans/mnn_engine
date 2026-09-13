@@ -25,6 +25,11 @@ fail() {
 
 bash "${verifier_script}" "${plugin_root}"
 
+# Reject a mismatched opt-in before replacing the current libraries/manifest.
+if [[ -n "${MNN_HEXAGON_ARTIFACTS:-}" ]] && ! grep -Fq '"MNN_HEXAGON=ON"' "${build_info}"; then
+    fail "Rebuild with MNN_HEXAGON=ON before packaging Hexagon DSP runtimes"
+fi
+
 mkdir -p "${bundled_dir}" "${manifest_dir}"
 install -m 0644 "${generated_dir}/libMNN.so" "${bundled_dir}/libMNN.so"
 install -m 0644 "${generated_dir}/libmnn_engine_jni.so" "${bundled_dir}/libmnn_engine_jni.so"
@@ -58,6 +63,9 @@ done
 
 required_symbols=(
     'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeBridge_nativeGetVersion'
+    'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeBridge_nativeConfigureBackends'
+    'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeBridge_nativeDetectHexagonArchitecture'
+    'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeBridge_nativeGetBackendCapabilities'
     'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeSession_nativeCreate'
     'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeSession_nativeGenerate'
     'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeSession_nativeCancel'
@@ -157,6 +165,9 @@ PY
 
 mv -f "${manifest_tmp}" "${manifest_path}"
 trap - EXIT
+
+python3 "${plugin_root}/scripts/hexagon_artifacts.py" package \
+    "${plugin_root}" "${MNN_HEXAGON_ARTIFACTS:-}" "${readelf_bin}"
 
 printf 'Bundled MNN native artifacts updated:\n'
 printf '  %s\n' "${bundled_dir}/libMNN.so"
