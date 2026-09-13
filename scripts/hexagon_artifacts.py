@@ -130,6 +130,9 @@ def describe(directory, commit, architecture, build_info=None):
 def package(plugin, source, readelf):
     manifest_path = plugin / "native/android-arm64-v8a.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    hexagon_compiled = "MNN_HEXAGON=ON" in manifest["build"]["cmakeFlags"]
+    if source and not hexagon_compiled:
+        raise ValueError("Rebuild MNN with MNN_HEXAGON=ON before packaging Hexagon DSP runtimes")
     assets = plugin / "android/src/main/assets/mnn/hexagon"
     stub = plugin / "android/src/main/jniLibs/arm64-v8a" / STUB
     sources = {}
@@ -175,7 +178,7 @@ def package(plugin, source, readelf):
         stub.unlink()
     manifest["libraries"].pop(STUB, None)
     manifest["runtime"] = {
-        "compiledBackends": ["cpu", "opencl", "vulkan", "hexagon"],
+        "compiledBackends": ["cpu", "opencl", "vulkan"] + (["hexagon"] if hexagon_compiled else []),
         "vulkanMode": "buffer",
         "hexagon": {"runtimePackaged": bundle is not None},
     }
@@ -200,7 +203,7 @@ def package(plugin, source, readelf):
         validate_packaged_manifest(manifest, bundle)
     write_json(manifest_path, manifest)
     print("Hexagon DSP runtimes packaged: " + ", ".join(sources) if bundle
-          else "Common package: Hexagon host compiled; DSP runtime not packaged")
+          else "Hexagon DSP runtime not packaged; compiled backends: " + ", ".join(manifest["runtime"]["compiledBackends"]))
 
 
 if __name__ == "__main__":

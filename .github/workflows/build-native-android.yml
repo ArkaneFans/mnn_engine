@@ -1,13 +1,13 @@
 name: Build Android native libraries
-run-name: Android native · ${{ github.ref_name }} · ${{ (github.event_name != 'workflow_dispatch' || inputs.include_hexagon) && 'Hexagon' || 'CPU/GPU' }}
+run-name: Android native · ${{ github.ref_name }} · ${{ (github.event_name == 'workflow_dispatch' && inputs.include_hexagon) && 'Hexagon (experimental)' || 'CPU/GPU' }}
 
 on:
   workflow_dispatch:
     inputs:
       include_hexagon:
-        description: Build and package the Hexagon DSP runtime (Docker includes the SDK)
+        description: Opt in to experimental Hexagon host and DSP builds (hidden in ServLlama)
         required: true
-        default: true
+        default: false
         type: boolean
       hexagon_dsp_arch:
         description: DSP runtimes (all automatically matches the device; a single target makes a smaller APK)
@@ -51,7 +51,7 @@ jobs:
     timeout-minutes: 180
     env:
       MNN_LOG_DIR: ${{ github.workspace }}/.native/logs/native
-      INCLUDE_HEXAGON: ${{ (github.event_name != 'workflow_dispatch' || inputs.include_hexagon) && 'true' || 'false' }}
+      INCLUDE_HEXAGON: ${{ (github.event_name == 'workflow_dispatch' && inputs.include_hexagon) && 'true' || 'false' }}
       HEXAGON_DSP_ARCH: ${{ inputs.hexagon_dsp_arch || 'all' }}
       HEXAGON_TOOLCHAIN: ${{ inputs.hexagon_toolchain || 'docker' }}
     outputs:
@@ -156,9 +156,17 @@ jobs:
           path: |
             ${{ steps.source.outputs.cache_path }}
             .native/generated
-          key: mnn-native-v3-${{ runner.os }}-${{ steps.source.outputs.mnn_commit }}-${{ hashFiles('scripts/build_mnn_android.sh', 'android/src/main/cpp/**') }}
+          key: mnn-native-v4-${{ runner.os }}-${{ env.INCLUDE_HEXAGON }}-${{ steps.source.outputs.mnn_commit }}-${{ hashFiles('scripts/build_mnn_android.sh', 'scripts/cmake/**', 'android/src/main/cpp/**') }}
+
+      - name: Test the native adapter and tokenizer compatibility
+        run: |
+          set -euo pipefail
+          bash scripts/test_mnn_llm_adapter.sh "${GITHUB_WORKSPACE}" 2>&1 | tee "${MNN_LOG_DIR}/native-tests.log"
+          bash scripts/test_mnn_tokenizer.sh "${GITHUB_WORKSPACE}" 2>&1 | tee "${MNN_LOG_DIR}/tokenizer-tests.log"
 
       - name: Build MNN and the JNI bridge
+        env:
+          MNN_HEXAGON: ${{ env.INCLUDE_HEXAGON == 'true' && 'ON' || 'OFF' }}
         run: |
           set -euo pipefail
           bash scripts/build_mnn_android.sh "${GITHUB_WORKSPACE}" 2>&1 | tee "${MNN_LOG_DIR}/build-mnn.log"

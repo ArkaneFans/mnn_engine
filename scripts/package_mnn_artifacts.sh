@@ -25,6 +25,11 @@ fail() {
 
 bash "${verifier_script}" "${plugin_root}"
 
+# Reject a mismatched opt-in before replacing the current libraries/manifest.
+if [[ -n "${MNN_HEXAGON_ARTIFACTS:-}" ]] && ! grep -Fq '"MNN_HEXAGON=ON"' "${build_info}"; then
+    fail "Rebuild with MNN_HEXAGON=ON before packaging Hexagon DSP runtimes"
+fi
+
 mkdir -p "${bundled_dir}" "${manifest_dir}"
 install -m 0644 "${generated_dir}/libMNN.so" "${bundled_dir}/libMNN.so"
 install -m 0644 "${generated_dir}/libmnn_engine_jni.so" "${bundled_dir}/libmnn_engine_jni.so"

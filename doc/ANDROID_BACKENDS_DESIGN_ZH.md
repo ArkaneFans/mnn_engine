@@ -1,6 +1,6 @@
 # ServLlama / mnn_engine：MNN 3.6.1 与 Android 推理后端设计
 
-初稿：2026-09-07；2026-09-08 补充 Docker / SDK 6.6 和多 DSP 架构按需加载设计。本文先于对应实现编写，最终构建和验证结果以实现报告为准。
+初稿：2026-09-07；更新：2026-09-13。当前向用户开放 CPU/OpenCL/Vulkan，Hexagon 保留开发实现但默认不构建、界面不显示。历史真机证据见[8 Elite 排查报告](HEXAGON_8_ELITE_INVESTIGATION_ZH.md)。
 
 ## 1. 目标与版本基线
 
@@ -19,7 +19,7 @@ ServLlama 是应用，mnn_engine 负责模型加载、MNN 推理和 OpenAI 兼�
 | CPU | 现有正式路径；ARM82、低内存、Transformer fuse | ARM64 Android | 保留为默认值与用户可主动切换的兼容选项 |
 | OpenCL | Llm 接受 `opencl`；buffer Attention、RoPE、低比特 GEMM 与 C4；发布说明含真实 LLM 基准 | OEM 提供并允许应用访问 OpenCL 驱动；创建运行时成功 | 编译并接入，设备探测成功后可选 |
 | Vulkan | Llm 接受 `vulkan`；buffer 后端有 Attention、KV cache、RoPE、LinearAttention 和 C4 处理 | Vulkan 驱动满足 MNN 要求；必须构建 buffer 版本 | `MNN_VULKAN=ON`、`MNN_VULKAN_IMAGE=OFF`，接入并进行设备探测 |
-| Hexagon NPU | Llm 接受 `hexagon`，ForwardType=10；独立直接编程后端，有 LLM Attention 和 W4A16 HMX 路径 | 支持 FP16 HMX 的 Hexagon v73+；FastRPC/cDSP 可访问；匹配 SDK 编译的 stub、skeleton 及 DSP C++ 运行库 | 保留实验性接入和构建路径；运行库或设备条件不足时显示不可用及原因 |
+| Hexagon NPU | Llm 接受 `hexagon`，ForwardType=10；独立直接编程后端，有 LLM Attention 和 W4A16 HMX 路径 | 支持 FP16 HMX 的 Hexagon v73+；FastRPC/cDSP 可访问；匹配 SDK 编译的 stub、skeleton 及 DSP C++ 运行库 | 保留实验实现；需要显式开发构建，ServLlama 暂时隐藏 |
 
 这三个新增后端均不存在已证实的理论性阻断，因此不删除其中任何一个。Hexagon **不是** `backend_type=npu`（后者映射到 NN/QNN），不引入 QNN 图导出、context binary 或 QAIRT 作为替代实现。
 
@@ -44,6 +44,11 @@ ServLlama 是应用，mnn_engine 负责模型加载、MNN 推理和 OpenAI 兼�
 5. 模型真正加载前再次校验所选后端。不可用返回 `backend_unavailable`，不静默切换 CPU；用户可以在设置中主动切换 CPU。
 6. 模型加载失败继续走现有卸载、停止、错误显示流程，保持单会话和单并发约束。
 
+Hexagon 在 `Llm::load()` 前还检查实际 graph 与 subgraphs，仅拒绝标准单输出
+`Attention.output_c4=false`，返回 `model_backend_incompatible`；UI 提示 CPU/GPU 或重新导出。
+路径合并与 LlmConfig 保持一致，图使用 mmap 和 FlatBuffers verifier 验证。
+不把非对称 W4 一律判为不兼容；已移除只用于排查的量化统计。
+
 可用性只表示运行时初始化通过，不替代特定模型的加载、生成、正确性与性能验收。日志、活动模型和快照记录本次加载选择的后端，供用户和验收定位。
 
 ## 4. 加载配置与生命周期
@@ -59,7 +64,7 @@ ServLlama 是应用，mnn_engine 负责模型加载、MNN 推理和 OpenAI 兼�
 
 ## 5. Android 构建与分发
 
-通用包把 CPU、OpenCL、Vulkan buffer 和 Hexagon host backend 编入同一个 `libMNN.so`，`MNN_SEP_BUILD=OFF`，`MNN_QNN=OFF`，并继续构建 `libmnn_engine_jni.so`。不使用官方通用 Android zip 直接替代：插件需要与 LLM/Omni 选项和 JNI ABI 一致的自编译产物。
+默认包把 CPU、OpenCL、Vulkan buffer 编入同一个 `libMNN.so`，`MNN_HEXAGON=OFF`、`MNN_SEP_BUILD=OFF`、`MNN_QNN=OFF`，同时构建 `libmnn_engine_jni.so`。Hexagon 主机后端需要显式 `MNN_HEXAGON=ON`；清单按真实参数生成，禁止将 DSP 资源打包到未编译主机后端的库上。不使用官方通用 Android zip 直接替代：插件需要与 LLM/Omni 选项和 JNI ABI 一致的自编译产物。
 
 ### Hexagon 可选产物
 
@@ -91,29 +96,38 @@ NDK、镜像 digest/ID、构建适配文件 hash、动态依赖与固件导入�
 架构、缺少 C++ 库或自定义未解析符号；设备固件提供的 QuRT/FastRPC/POSIX/unwinder
 接口保留到真机验证。
 
-Actions 默认开启 `include_hexagon`，使用 Docker 和 `hexagon_dsp_arch=all`，无需配置 SDK secret。
-关闭该选项可生成 CPU/GPU 通用包；选择单一架构可缩小定向测试包。
+Actions 默认 `include_hexagon=false`，手动默认和 `native-v*` 标签均只构建 CPU/GPU。
+手动显式开启后编译 Hexagon 主机后端，并使用 Docker / `hexagon_dsp_arch=all` 生成 DSP 资源；也可选择单架构。
 `hexagon_toolchain=sdk_archive` 保留已有自备 SDK 入口。
 
 ### 多架构检测与兼容边界
 
-SDK 包装层在共用 stub 中导出 `mnn_engine_query_hexagon_arch`，使用真正的 SDK 头文件进行无会话架构查询。JNI 通过 `dlsym` 调用，不复制 Qualcomm ABI 定义，也不要求 CPU/GPU 构建安装 SDK；新增 JNI 查询接口后，native adapter ABI 升为 4。FastRPC 返回值低字节按 BCD 解码（例如 `0x79` 对应 v79），并拒绝无效编码。
+SDK 包装层在共用 stub 中导出 `mnn_engine_query_hexagon_arch`，使用真正的 SDK 头文件进行无会话架构查询。JNI 通过 `dlsym` 调用，不复制 Qualcomm ABI 定义，也不要求 CPU/GPU 构建安装 SDK。当前 native adapter ABI 为 7，保留 libMNN 直接日志桥并简化日志接口。FastRPC 返回值低字节按 BCD 解码（例如 `0x79` 对应 v79），并拒绝无效编码。
 
 不根据手机型号猜测架构，不在查询失败时默认 v73，也不把未知架构强行映射到更低或更高 ISA。已支持的四种架构精确选择；后续硬件需在 SDK/MNN 验证后明确加入支持列表。FP16 HMX 和 OEM 权限仍由实际会话初始化验证，识别为 v73+ 本身不代表模型可运行。
 
-架构查询不加载 DSP skeleton。资源准备失败后，用户刷新能力时可以重试；成功后复用校验过的本进程路径。整个 DSP 会话探测仍受 RuntimeManager 的模型生命周期锁保护，模型驻留时只返回缓存能力。ServLlama 显示自动匹配的架构，不增加手工架构选择开关。
+架构查询不加载 DSP skeleton。资源准备失败后，开发者再次查询能力可以重试；成功后复用校验过的本进程路径。整个 DSP 会话探测仍受 RuntimeManager 的模型生命周期锁保护，模型驻留时只返回缓存能力。默认包不包含 DSP 资源，不触发该初始化路径。
 
 ## 6. ServLlama 集成与交互
 
 服务设置在选择 MNN 引擎时显示“推理后端”区域，llama.cpp 参数区不混入 MNN 专属字段。
 
-- 单选 CPU / OpenCL GPU / Vulkan GPU / Hexagon NPU（实验性）。
+- 单选 CPU / OpenCL GPU / Vulkan GPU。开放列表集中在 `ServerLaunchSettings.supportedMnnBackends`，界面和 provider 共用；插件报告 Hexagon 可用也不会开放选择。
 - 默认 CPU，设置使用独立持久化键，与 llama.cpp 的参数互不覆盖。
+- 加载旧设置时将 Hexagon 或未知值迁移并持久化为 CPU，保证页面隐藏后不会自动启动 NPU；保存时同样限制开放列表。已开放但暂时不可用的 GPU 选择仍保留并提示。
 - 后端行显示用途/限制与可用性；不可用项不可选，并解释是缺运行库、驱动不可用或构建未包含。
 - 能力读取有加载、失败、重试状态；读取失败时仍可恢复 CPU 默认选择。
 - 页面说明“下次启动生效”；当前活动模型的后端与下次选择有区别，运行日志也记录加载后端。
 - 中英文 ARB 同步；布局适应窄屏、长错误提示及大字体。
 - 应用 adapter 每次启动传递已保存的 MNN 选项，不在页面中拼 native JSON。
+
+### 日志与维护边界
+
+INFO 记录实际模型加载/卸载、服务启停与生成完成；DEBUG 记录请求开始/耗时、复用、媒体准备和底层内部细节；WARNING 表示可恢复的输入/能力限制，ERROR 表示真实失败。方法通道和 HTTP 各自只记录一次失败摘要。
+
+直接 MNN 日志桥在加载/生成开始时清空有界上下文，失败时读取；最多 128 条 / 64 KiB，保留开头 8 条和最新尾部。移除全局 Android logger hook、logcat 子进程回退、通路自检、设备/配置整段输出、成功阶段逐步记录，以及默认 `enable_debug` 注入。错误保留阶段、后端、状态和必要 token 计数。
+
+prefill/decode 错误检查、错误会话禁止复用、模型格式预检和 MTOK added-token 修复继续保留。一次性设备调查脚本归档，正式回归独立位于 `test/native/`，Actions 构建时运行；模型资源和历史证据不随插件分发。
 
 ## 7. 验证计划
 
@@ -121,10 +135,14 @@ SDK 包装层在共用 stub 中导出 `mnn_engine_query_hexagon_arch`，使用�
 2. Kotlin：参数校验、运行配置覆盖且原配置不变、cache 隔离、后端复用条件、资产与能力信息解析。
 3. Native：WSL 构建；AArch64 ELF、16 KB 对齐、JNI exports、选项和提交一致；Hexagon 可选产物有单独验证。
 4. Flutter analyze 与相关测试，必要时完整 Flutter suite；Android 编译/单元测试。
-5. 真机：CPU 基线、OpenCL、Vulkan、Hexagon（具备运行库和合适设备时）分别测试导入/下载模型、短长 prompt、中文流式、取消、重启、切换、图片、工具调用、后台服务与并发 429。
+5. 真机：CPU、OpenCL、Vulkan 分别测试导入/下载模型、短长 prompt、中文流式、取消、重启、切换、图片、工具调用、后台服务与并发 429。NPU 属于后续开发验收，不是当前用户流程。
 6. 记录 cold load、prefill、decode、内存和温度，使用同一模型/量化/提示词，不引用官方数字作为本地结果。
 
-当前环境无 adb 设备。Docker SDK 已实际完成 v73/v75/v79/v81 编译和产物检查；未执行的设备验收仍须逐项标注。
+Docker SDK 已完成 v73/v75/v79/v81 编译与产物检查。8 Elite 真机的官方 CLI 已复现原 Qwen3-0.6B 非 C4 Attention resize 失败；独立 FastRPC probe 在约 3.9 GiB 累计映射后失败。用户 Qwen3.5-4B 原包也有非 C4 Attention，非对称 W4 展开 FP16 的静态估算约 7.83 GiB，且原日志已有 map 错误。本轮未重新导出或运行完整 4B 权重。
+
+历史调查中，同一提交重新导出的对称 W4/C4 Qwen3-0.6B 已通过官方与应用 NPU 短对话；应用也通过原包切回 CPU 回归。CMake 在构建副本中修复 MNN MTOK added-token 解码，避免吞掉思考和工具标记。正式 libMNN 包含该补丁，子模块与 DSP kernels 保持不变。
+
+历史长输入答案质量未通过：Hexagon、OpenCL、CPU 高精度/高内存均答错，Vulkan 也有多余错误数字。第一层独立权重方程对照没有支持 Hexagon 算子错误，CPU 低内存不是数值 golden。当前暂不开放 NPU，继续按模型验收 CPU/GPU，不以 benchmark 或 HTTP 成功替代正确性。详见[实机报告](HEXAGON_8_ELITE_INVESTIGATION_ZH.md)。
 
 ## 8. 一手资料
 
@@ -139,4 +157,4 @@ SDK 包装层在共用 stub 中导出 `mnn_engine_query_hexagon_arch`，使用�
 - [Qualcomm Hexagon NPU SDK](https://www.qualcomm.com/developer/software/hexagon-npu-sdk)
 - [llama.cpp Snapdragon Docker 工具链说明](https://github.com/ggml-org/llama.cpp/blob/master/docs/backend/snapdragon/README.md)
 
-本次不修改上游算子或 DSP kernels。后续若需要改动 kernels，须单独验证正确性和真机性能。
+本次未修改 DSP kernels，tokenizer 兼容补丁仅存在于构建目录副本。后续若需要改动 kernels，须单独验证正确性和真机性能。

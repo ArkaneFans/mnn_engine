@@ -15,9 +15,32 @@ pub.dev 安装插件后会直接使用已经打包好的库，不需要安装这
 插件基于 MNN 3.6.1，固定 commit 为
 `d407447ed56c4121a11ccbd266dc184ca1ead0c2`。
 
-通用构建开启 `MNN_OPENCL`、`MNN_VULKAN`、`MNN_HEXAGON`，并设置
-`MNN_VULKAN_IMAGE=OFF`，使用适合 LLM 的 Vulkan buffer 算子。编译 Hexagon host
-不需要 SDK，但真正执行 DSP 推理需要下面的可选产物。
+默认构建 CPU、`MNN_OPENCL`、`MNN_VULKAN`，设置 `MNN_VULKAN_IMAGE=OFF`，
+使用适合 LLM 的 Vulkan buffer 算子；`MNN_HEXAGON=OFF`。
+Hexagon 保留开发实现，但 ServLlama 不开放入口。需显式设置 `MNN_HEXAGON=ON`
+编译主机后端，并打包下面的 SDK 产物，才能进行 DSP 推理测试。
+
+当前 native adapter ABI 为 **7**，通用构建同时要求
+`MNN_USE_LOGCAT=ON` 和 `MNN_ENGINE_LOG_BRIDGE=ON`。插件自有的
+`scripts/cmake/mnn_log_bridge.cmake` 通过 `CMAKE_PROJECT_MNN_INCLUDE` 和
+`--wrap=__android_log_print` 向 libMNN 加入直接日志桥，不改上游子模块。
+升级时一起重编并打包 MNN 与 JNI。桥源文件和 CMake 扩展纳入构建指纹，
+验证脚本检查日志 sink 导出。加载或生成失败时从有界缓冲区读取 MNN 错误上下文；
+已移除全局 Android logger hook、运行时自检和 logcat 子进程回退，保留正常系统输出。
+INFO 记录模型/服务生命周期和生成完成；请求时序、MNN 内部 INFO 细节使用 DEBUG，
+底层 warning/error 保留对应级别。成功请求不输出整段 native 状态。
+
+通用构建还要求 `MNN_ENGINE_TOKENIZER_ADDED_TOKENS=ON`。
+`scripts/cmake/mnn_tokenizer_compat.cmake` 在构建目录的源码副本中修复
+MNN 3.6.1 单 token MTOK 解码，保留 `</think>`、`<tool_call>` 等 added tokens。
+子模块仍然干净，但正式 libMNN 包含该兼容补丁；补丁脚本纳入构建指纹，
+上游函数不再匹配时会明确停止配置。MNN/JNI 一起重编并打包后运行
+`bash scripts/test_mnn_tokenizer.sh "$PWD"`；WSL 可用 `MNN_BUILD_JOBS=4` 控制内存。
+
+8 Elite 上已跑通官方 CLI 和应用的 W4/C4 Qwen3-0.6B 短对话，非 C4 Attention
+会在模型加载前明确拒绝。长输入答案质量尚未通过，其他官方后端/配置也可复现
+错误回答，不能直接认定 Hexagon 算子有错。详见[真机排查报告](HEXAGON_8_ELITE_INVESTIGATION_ZH.md)。
+这些是历史调查证据；维护中的回归测试见 [test/native/README.md](../test/native/README.md)。
 
 ## 推荐：使用 GitHub Actions
 
@@ -38,7 +61,7 @@ Actions 页面启用。工作流沿用已有名称，避免出现两个用途相
 
 | 选项 | 默认值 | 作用 |
 | --- | --- | --- |
-| `include_hexagon` | `true` | 默认构建并打包 DSP 运行库；Docker 已包含 SDK，无需 SDK secret；关闭可生成通用 CPU/GPU 包 |
+| `include_hexagon` | `false` | 默认只构建 CPU/GPU；显式开启才构建实验性 Hexagon 主机后端与 DSP 运行库 |
 | `hexagon_dsp_arch` | `all` | 默认在同一包集成 v73/v75/v79/v81，设备自动匹配；也可选择单架构精简包 |
 | `hexagon_toolchain` | `docker` | 默认使用固定 Snapdragon 工具链镜像；`sdk_archive` 使用自行提供的 SDK 压缩包 |
 | `verify_example_apk` | `false` | 在独立 job 中运行 Flutter/Kotlin 测试，并构建、校验 ARM64 example APK |
@@ -52,7 +75,8 @@ gh workflow run build-native-android.yml --ref feat/mnn-android-backends \
   -f include_hexagon=true -f hexagon_dsp_arch=all -f verify_example_apk=true
 ```
 
-推送 `native-v*` 标签会自动构建包含四种 DSP 架构的完整包，并验证 example APK。
+推送 `native-v*` 标签构建 CPU/GPU 包，并验证 example APK。只有手动运行并设置
+`include_hexagon=true` 才构建 Hexagon。每次 native 构建都会执行 adapter、日志桥与 tokenizer 回归测试。
 工作流只上传 Actions artifacts，不自动创建 Release 或发布到 pub.dev。
 
 ### 下载内容与应用方式
@@ -223,6 +247,7 @@ v73/v75/v79/v81，共用一份 ARM64 stub，在同一安装包中按设备架构
 
 ```bash
 export ANDROID_NDK="$HOME/android-ndk-r27d"
+MNN_HEXAGON=ON bash scripts/build_mnn_android.sh "$PWD"
 bash scripts/build_hexagon_docker.sh "$PWD" all
 MNN_HEXAGON_ARTIFACTS="$PWD/.native/hexagon" \
   bash scripts/package_mnn_artifacts.sh "$PWD"
@@ -264,7 +289,7 @@ bash scripts/build_hexagon_android.sh "$PWD" all
 - `jniLibs/arm64-v8a/libMNN_htpops.so`：Android stub。
 - `assets/mnn/hexagon/manifest.json`：schema 2，记录每个架构的资源与构建来源。
 - `assets/mnn/hexagon/<架构>/`：DSP skeleton、`libc++.so.1`、`libc++abi.so.1`。
-- `native/android-arm64-v8a.json`：JNI ABI 4；`runtime.hexagon.dspArchitectures` 应列出四种架构。
+- `native/android-arm64-v8a.json`：JNI ABI 7；编译后端来自实际构建参数，`runtime.hexagon.dspArchitectures` 列出所打包架构。
 
 DSP ELF 必须放 assets，不能伪装成 ARM64 JNI 库。首次查询后端能力时，插件通过
 FastRPC 查询真实架构，仅将匹配的一套校验并解包到 `noBackupFilesDir/mnn/hexagon/<清单hash>/<架构>/`，
@@ -278,8 +303,10 @@ FastRPC 查询真实架构，仅将匹配的一套校验并解包到 `noBackupFi
 开放 Hexagon。传父目录 `.native/hexagon` 时要求四套库齐全，缺少任何一套会报错；
 其他实验目录（例如 `v73-ndk-r29`）不会被自动纳入。
 
-不传 `MNN_HEXAGON_ARTIFACTS` 时生成通用 CPU/GPU 包，并移除此前的可选 Hexagon
-产物。缺 SDK 不阻塞通用包构建；含 DSP 的包编译成功后，仍需验证设备加载、推理
+不传 `MNN_HEXAGON_ARTIFACTS` 时移除此前的可选 DSP 产物。生成默认 CPU/GPU 包时，
+先以 `MNN_HEXAGON=OFF`（默认值）重新构建，再不带 DSP 资源打包。主机后端未编译时
+传入 DSP 资源会报错。PowerShell 构建脚本通过 `-IncludeHexagon` 显式开启主机后端。
+缺 SDK 不阻塞默认构建；含 DSP 的包编译成功后，仍需验证设备加载、推理
 正确性和性能。
 
 ## 什么时候需要重新编译

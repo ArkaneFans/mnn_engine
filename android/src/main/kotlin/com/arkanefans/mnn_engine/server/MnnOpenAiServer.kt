@@ -60,7 +60,7 @@ class MnnOpenAiServer(
                 MnnServerSocketPolicy.configure(this, mode.host, port)
             },
         ) {
-            install(CallLogging) { level = Level.INFO }
+            install(CallLogging) { level = Level.DEBUG }
             routing {
                 get("/") {
                     logStore.debug(TAG, "GET /")
@@ -120,7 +120,7 @@ class MnnOpenAiServer(
                     }
                     val requestId = UUID.randomUUID().toString()
                     val requestStartedAt = SystemClock.elapsedRealtime()
-                    logStore.info(TAG, "$requestId POST /v1/chat/completions started")
+                    logStore.debug(TAG, "$requestId POST /v1/chat/completions started")
                     try {
                         val staged = try {
                             mediaStager.stage(requestId, request.messages)
@@ -141,7 +141,7 @@ class MnnOpenAiServer(
                         }
                     } finally {
                         requestBusy.set(false)
-                        logStore.info(TAG, "$requestId POST /v1/chat/completions completed in ${SystemClock.elapsedRealtime() - requestStartedAt}ms")
+                        logStore.debug(TAG, "$requestId POST /v1/chat/completions completed in ${SystemClock.elapsedRealtime() - requestStartedAt}ms")
                     }
                 }
             }

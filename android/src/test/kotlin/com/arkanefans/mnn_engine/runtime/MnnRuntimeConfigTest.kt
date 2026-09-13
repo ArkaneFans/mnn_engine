@@ -53,6 +53,26 @@ class MnnRuntimeConfigTest {
     }
 
     @Test
+    fun backendsDoNotInjectDebugConfigurationAndHonorExplicitValues() {
+        val directory = Files.createTempDirectory("mnn-runtime-diagnostics").toFile()
+        try {
+            val source = JsonParser.parseString("{}").asJsonObject
+            for (backend in MnnBackend.entries) {
+                assertFalse(MnnRuntimeConfig.create(source, MnnLoadOptions(backend), directory, "3.6.1", 8)
+                    .has("enable_debug"))
+                for (enabled in listOf(false, true)) {
+                    val configured = source.deepCopy().apply { addProperty("enable_debug", enabled) }
+                    assertEquals(enabled, MnnRuntimeConfig.create(configured, MnnLoadOptions(backend), directory, "3.6.1", 8)
+                        .get("enable_debug").asBoolean)
+                }
+            }
+            assertFalse(source.has("enable_debug"))
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
     fun missingThreadsUseTheExistingBoundedCpuDefault() {
         val directory = Files.createTempDirectory("mnn-runtime-threads").toFile()
         try {

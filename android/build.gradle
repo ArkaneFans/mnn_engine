@@ -51,8 +51,11 @@ tasks.register("verifyBundledMnnNativeArtifacts") {
             )
         }
         def manifest = new groovy.json.JsonSlurper().parse(nativeManifest)
-        if ((manifest.build.nativeAdapterAbiVersion as int) < 4) {
-            throw new GradleException("mnn_engine needs native adapter ABI 4. Rebuild and package the native libraries.")
+        if ((manifest.build.nativeAdapterAbiVersion as int) < 7) {
+            throw new GradleException("mnn_engine needs native adapter ABI 7. Rebuild and package the native libraries.")
+        }
+        if (!manifest.build.cmakeFlags.contains("MNN_ENGINE_LOG_BRIDGE=ON")) {
+            throw new GradleException("mnn_engine requires the native MNN log bridge. Rebuild and package the native libraries.")
         }
         def checkHash = { File artifact, String expected ->
             if (!artifact.isFile() || java.security.MessageDigest.getInstance("SHA-256")

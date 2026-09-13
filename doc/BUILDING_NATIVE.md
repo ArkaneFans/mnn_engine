@@ -16,9 +16,40 @@ libraries and do not need this toolchain.
 The plugin is built against MNN 3.6.1 at commit
 `d407447ed56c4121a11ccbd266dc184ca1ead0c2`.
 
-The common build enables `MNN_OPENCL`, `MNN_VULKAN` and `MNN_HEXAGON`, with
-`MNN_VULKAN_IMAGE=OFF` for LLM buffer operators. Hexagon host compilation does
-not require the SDK; executing on the DSP does.
+The default build enables CPU, `MNN_OPENCL` and `MNN_VULKAN`, with
+`MNN_VULKAN_IMAGE=OFF` for LLM buffer operators and `MNN_HEXAGON=OFF`.
+Hexagon is retained for development but hidden in ServLlama. Building its host
+backend requires explicit `MNN_HEXAGON=ON`; executing on the DSP also requires
+the optional SDK-built resources below.
+
+The current native adapter ABI is **7**. The common build also
+requires `MNN_USE_LOGCAT=ON` and `MNN_ENGINE_LOG_BRIDGE=ON`. The plugin-owned
+`scripts/cmake/mnn_log_bridge.cmake` attaches a direct log bridge to libMNN through
+`CMAKE_PROJECT_MNN_INCLUDE` and `--wrap=__android_log_print`, without changing
+the upstream submodule. Rebuild and package MNN and JNI together. The build
+fingerprint includes bridge sources and CMake extensions, and verification
+checks the log-sink export. A bounded buffer preserves native error context
+when loading or generation fails. There is no process-wide Android logger hook,
+runtime self-test, or Logcat subprocess fallback. Normal Android output is kept.
+Application INFO logs cover model/server lifecycle and generation completion;
+request timing and internal MNN INFO details use DEBUG, while native warning and
+error priorities are preserved. Successful requests do not dump native context.
+
+The common build also requires `MNN_ENGINE_TOKENIZER_ADDED_TOKENS=ON`.
+`scripts/cmake/mnn_tokenizer_compat.cmake` fixes MNN 3.6.1's single-token MTOK
+decode in a generated build copy, preserving added tokens such as `</think>`
+and `<tool_call>`. The pinned submodule is unchanged, but the shipped libMNN
+includes this compatibility patch. Its source is fingerprinted; unexpected
+upstream source changes fail configuration for review. Rebuild and package MNN
+and JNI together, then run `bash scripts/test_mnn_tokenizer.sh "$PWD"`.
+`MNN_BUILD_JOBS=4` limits native build memory use in WSL.
+
+On the tested 8 Elite, W4/C4 Qwen3-0.6B short conversations now work in both
+official CLI and the app; non-C4 Attention is rejected before model loading.
+Long-input answer quality has not passed, and errors also reproduce with other
+official backend/configuration choices. See the [device investigation](HEXAGON_8_ELITE_INVESTIGATION_ZH.md)
+for historical evidence. Maintained regression commands are documented in
+[test/native/README.md](../test/native/README.md).
 
 ## Recommended: GitHub Actions
 
@@ -42,7 +73,7 @@ Enable Actions first if your fork has not enabled workflows yet.
 
 | Input | Default | Effect |
 | --- | --- | --- |
-| `include_hexagon` | `true` | Build and package the DSP runtimes using the SDK in Docker; disable for a common CPU/GPU bundle |
+| `include_hexagon` | `false` | Explicitly opt in to the experimental host backend and SDK-built DSP runtimes; default builds CPU/GPU only |
 | `hexagon_dsp_arch` | `all` | Bundle v73/v75/v79/v81 and automatically match the device, or choose a single target for a smaller APK |
 | `hexagon_toolchain` | `docker` | Pinned Snapdragon Docker image, or `sdk_archive` for a supplied SDK installation |
 | `verify_example_apk` | `false` | Analyze/test Flutter, run Kotlin tests and build/verify the ARM64 example APK in a separate job |
@@ -56,8 +87,10 @@ gh workflow run build-native-android.yml --ref feat/mnn-android-backends \
   -f include_hexagon=true -f hexagon_dsp_arch=all -f verify_example_apk=true
 ```
 
-Pushing a `native-v*` tag builds the complete four-architecture bundle and verifies
-the example APK. The workflow uploads Actions
+Pushing a `native-v*` tag builds the CPU/GPU bundle and verifies
+the example APK. Hexagon is built only by a manual run with `include_hexagon=true`.
+Every native build runs the adapter/log bridge and tokenizer regression checks.
+The workflow uploads Actions
 artifacts; it does not publish GitHub Releases or pub.dev packages.
 
 ### Download and install the artifacts
@@ -241,6 +274,7 @@ The default builds v73/v75/v79/v81, with one shared ARM64 stub and automatic dev
 
 ```bash
 export ANDROID_NDK="$HOME/android-ndk-r27d"
+MNN_HEXAGON=ON bash scripts/build_mnn_android.sh "$PWD"
 bash scripts/build_hexagon_docker.sh "$PWD" all
 MNN_HEXAGON_ARTIFACTS="$PWD/.native/hexagon" \
   bash scripts/package_mnn_artifacts.sh "$PWD"
@@ -281,7 +315,7 @@ alignment. The outputs are:
 - `jniLibs/arm64-v8a/libMNN_htpops.so`: Android stub.
 - `assets/mnn/hexagon/manifest.json`: schema 2, with resource hashes and build provenance for each architecture.
 - `assets/mnn/hexagon/<architecture>/`: DSP skeleton, `libc++.so.1` and `libc++abi.so.1`.
-- `native/android-arm64-v8a.json`: JNI ABI 4; `runtime.hexagon.dspArchitectures` lists the four packaged targets.
+- `native/android-arm64-v8a.json`: JNI ABI 7; compiled backends reflect actual build flags and `runtime.hexagon.dspArchitectures` lists the packaged targets.
 
 The DSP files must remain assets, not ARM64 JNI libraries. On the first backend
 capability request, FastRPC identifies the device ISA. Android verifies and
@@ -297,9 +331,12 @@ only on a matching v79 device. Passing the parent `.native/hexagon` requires
 all four targets and fails if one is missing. Unrelated experiment directories
 such as `v73-ndk-r29` are not automatically included.
 
-Running packaging without `MNN_HEXAGON_ARTIFACTS` produces the common CPU/GPU
-package and removes previous optional Hexagon output. SDK absence does not
-block this common build. Device correctness and performance checks remain
+Running packaging without `MNN_HEXAGON_ARTIFACTS` removes previous optional DSP
+output. For a default CPU/GPU build, first rebuild with `MNN_HEXAGON=OFF` (the
+default), then package without DSP resources. Passing DSP resources to a build
+with the host backend disabled is rejected. The PowerShell build wrapper exposes
+`-IncludeHexagon` for the same opt-in. SDK absence does not block the default build.
+Device correctness and performance checks remain
 required even when DSP compilation and packaging succeed.
 
 ## When to rebuild

@@ -15,6 +15,8 @@ add_library(mnn_engine_jni SHARED
     mnn_engine_jni.cpp
     mnn_backend_support.cpp
     mnn_llm_session_adapter.cpp
+    mnn_hexagon_model_check.cpp
+    mnn_native_diagnostics.cpp
 )
 target_compile_features(mnn_engine_jni PRIVATE cxx_std_17)
 target_compile_definitions(mnn_engine_jni PRIVATE
@@ -27,6 +29,8 @@ target_include_directories(mnn_engine_jni PRIVATE
     "${MNN_ROOT}/include"
     "${MNN_ROOT}/transformers/llm/engine/include"
     "${MNN_ROOT}/apps/frameworks/3rd_party/include"
+    "${MNN_ROOT}/schema/current"
+    "${MNN_ROOT}/3rd_party/flatbuffers/include"
 )
 target_link_libraries(mnn_engine_jni PRIVATE MNN log android dl)
 target_link_options(mnn_engine_jni PRIVATE "-Wl,-z,max-page-size=16384")

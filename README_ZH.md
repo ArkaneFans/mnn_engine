@@ -173,11 +173,12 @@ if (opencl.available) {
 不代表全部算子都在加速器上执行。模型独立的 `mllm` 编码器配置会保留，未配置时
 Omni 共享主后端，因此视觉模型也需要在所选后端上单独验收。
 
-当前包在同一 APK 中包含 **v73、v75、v79、v81** 四套 Hexagon DSP 运行库。插件查询
+默认包仅包含 CPU/OpenCL/Vulkan，Hexagon 为实验性。显式开启的实验构建
+可在同一 APK 中包含 **v73、v75、v79、v81** 四套 Hexagon DSP 运行库。插件查询
 真实 cDSP 架构，只解包和加载精确匹配的一套，无需手工选择架构；能力项的
 `dspArchitecture` 返回识别结果。仍需支持 FP16 HMX 的高通 DSP 和 OEM FastRPC
-访问能力。使用 `include_hexagon=false` 构建的通用包不包含 stub/DSP 资源，Hexagon
-会显示不可用。具体操作见 [Native 构建说明](doc/BUILDING_NATIVE_ZH.md) 与
+访问能力。使用 `include_hexagon=false` 构建的通用包关闭主机后端，也不包含 stub/DSP 资源。
+具体操作见 [Native 构建说明](doc/BUILDING_NATIVE_ZH.md) 与
 [后端设计文档](doc/ANDROID_BACKENDS_DESIGN_ZH.md)。启用 Hexagon 的宿主应用必须设置
 `packaging.jniLibs.useLegacyPackaging = true`，确保 stub 存在于 `nativeLibraryDir`。
 
@@ -259,8 +260,8 @@ android/src/main/jniLibs/arm64-v8a/
 Native 编译。
 
 在 Actions 中运行 **Build Android native libraries** 可直接下载 `.so`、校验清单和
-构建日志；默认开启 `include_hexagon`，使用自带 SDK 的固定 Docker 镜像编译四套 DSP
-运行库，无需 SDK secret。也支持自行提供 SDK 压缩包。
+构建日志；默认 `include_hexagon=false`，包括 `native-v*` 标签构建，均只编译 CPU/GPU。
+显式开启后使用自带 SDK 的固定 Docker 镜像编译四套 DSP 运行库，无需 SDK secret；也支持自行提供 SDK 压缩包。
 example APK 验证可单独开启。操作步骤见 [GitHub Actions 构建说明](doc/BUILDING_NATIVE_ZH.md#推荐使用-github-actions)。
 
 ## 其他资源

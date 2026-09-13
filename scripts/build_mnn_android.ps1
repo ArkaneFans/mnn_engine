@@ -1,5 +1,6 @@
 param(
-    [string]$Distro = "Ubuntu-22.04"
+    [string]$Distro = "Ubuntu-22.04",
+    [switch]$IncludeHexagon
 )
 
 $ErrorActionPreference = "Stop"
@@ -25,7 +26,8 @@ function Convert-ToWslPath([string]$WindowsPath) {
 $wslPluginRoot = Convert-ToWslPath $pluginRoot
 $wslScriptPath = Convert-ToWslPath $scriptPath
 
-& wsl.exe -d $Distro -- bash $wslScriptPath $wslPluginRoot
+$hexagonEnabled = if ($IncludeHexagon) { "ON" } else { "OFF" }
+& wsl.exe -d $Distro -- env "MNN_HEXAGON=$hexagonEnabled" bash $wslScriptPath $wslPluginRoot
 if ($LASTEXITCODE -ne 0) {
     throw "MNN Android build failed with exit code $LASTEXITCODE."
 }

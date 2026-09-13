@@ -53,6 +53,7 @@ required_symbols=(
     'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeBridge_nativeConfigureBackends'
     'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeBridge_nativeDetectHexagonArchitecture'
     'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeBridge_nativeGetBackendCapabilities'
+    'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeBridge_nativeTakeDiagnosticLogs'
     'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeSession_nativeCreate'
     'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeSession_nativeGenerate'
     'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeSession_nativeCancel'
@@ -62,6 +63,12 @@ required_symbols=(
 symbols="$("${readelf_bin}" -Ws "${jni_library}")"
 for symbol in "${required_symbols[@]}"; do
     grep -q "${symbol}" <<<"${symbols}" || fail "missing JNI export ${symbol}"
+done
+
+mnn_symbols="$("${readelf_bin}" --dyn-syms -W "${mnn_library}")"
+for symbol in mnn_engine_set_native_log_sink; do
+    awk -v name="${symbol}" '$7 != "UND" && $8 == name { found = 1 } END { exit !found }' \
+        <<<"${mnn_symbols}" || fail "libMNN.so is missing native log bridge export ${symbol}"
 done
 
 python3 - "${build_info}" "${plugin_root}/MNN" <<'PY'
@@ -98,17 +105,20 @@ if info["androidPlatform"] != "android-28":
     raise SystemExit(f"unexpected Android platform in build info: {info['androidPlatform']}")
 if info["cmakeVersion"] != "3.22.1":
     raise SystemExit(f"unexpected CMake version in build info: {info['cmakeVersion']}")
-if int(info["nativeAdapterAbiVersion"]) < 4:
-    raise SystemExit("nativeAdapterAbiVersion must be at least 4")
+if int(info["nativeAdapterAbiVersion"]) < 7:
+    raise SystemExit("nativeAdapterAbiVersion must be at least 7")
 flags = set(info["cmakeFlags"])
+if len(flags & {"MNN_HEXAGON=ON", "MNN_HEXAGON=OFF"}) != 1:
+    raise SystemExit("build info must specify exactly one MNN_HEXAGON mode")
 for expected in (
     "MNN_BUILD_FOR_ANDROID_COMMAND=ON",
+    "MNN_ENGINE_LOG_BRIDGE=ON",
+    "MNN_ENGINE_TOKENIZER_ADDED_TOKENS=ON",
     "MNN_BUILD_LLM_OMNI=ON",
     "MNN_KLEIDIAI=OFF",
     "MNN_OPENCL=ON",
     "MNN_VULKAN=ON",
     "MNN_VULKAN_IMAGE=OFF",
-    "MNN_HEXAGON=ON",
     "ANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
 ):
     if expected not in flags:

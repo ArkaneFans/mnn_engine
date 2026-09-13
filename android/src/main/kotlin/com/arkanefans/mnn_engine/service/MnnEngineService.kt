@@ -74,7 +74,7 @@ class MnnEngineService : Service() {
         )
         directories.ensureCreated()
         cleanupStaging()
-        logStore.info(TAG, "Service created")
+        logStore.debug(TAG, "Service created")
     }
 
     override fun onBind(intent: Intent?): IBinder = LocalBinder()
@@ -128,7 +128,6 @@ class MnnEngineService : Service() {
                 lastError = if (loaded) null else MnnNativeBridge.loadFailureMessage(),
             ),
         )
-        logStore.info(TAG, "Engine initialized, nativeLoaded=$loaded, version=$version")
         return mapOf(
             "pluginVersion" to BuildConfig.MNN_ENGINE_VERSION,
             "mnnVersion" to version.substringBefore(" (").ifBlank { "unavailable" },
@@ -279,7 +278,11 @@ class MnnEngineService : Service() {
         } catch (error: IllegalArgumentException) {
             throw MnnEngineOperationException("model_config_not_found", error.message ?: "Model not found.", cause = error)
         } catch (error: Throwable) {
-            val code = if (error.message?.startsWith("backend_unavailable:") == true) "backend_unavailable" else "model_load_failed"
+            val code = when {
+                error.message?.startsWith("backend_unavailable:") == true -> "backend_unavailable"
+                error.message?.startsWith("model_backend_incompatible:") == true -> "model_backend_incompatible"
+                else -> "model_load_failed"
+            }
             throw MnnEngineOperationException(code, error.message ?: "MNN model load failed.", cause = error)
         }
     }
@@ -517,7 +520,7 @@ class MnnEngineService : Service() {
         runCatching { openAiServer.stop() }
         clearForegroundSession(stopService = false)
         runtimeManager.release()
-        logStore.info(TAG, "Service destroyed")
+        logStore.debug(TAG, "Service destroyed")
         runtimeListeners.clear()
         super.onDestroy()
     }

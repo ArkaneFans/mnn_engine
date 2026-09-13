@@ -15,6 +15,8 @@
       "MNN_SUPPORT_TRANSFORMER_FUSE=ON",
       "MNN_ARM82=ON",
       "MNN_USE_LOGCAT=ON",
+      "MNN_ENGINE_LOG_BRIDGE=ON",
+      "MNN_ENGINE_TOKENIZER_ADDED_TOKENS=ON",
       "MNN_SEP_BUILD=OFF",
       "MNN_KLEIDIAI=OFF",
       "MNN_BUILD_DIFFUSION=OFF",
@@ -24,99 +26,35 @@
       "MNN_OPENCL=ON",
       "MNN_VULKAN=ON",
       "MNN_VULKAN_IMAGE=OFF",
-      "MNN_HEXAGON=ON",
+      "MNN_HEXAGON=OFF",
       "MNN_QNN=OFF",
       "MNN_BUILD_TEST=OFF",
       "MNN_BUILD_BENCHMARK=OFF"
     ],
-    "fingerprint": "b2d6c0b274e6df7df4147416",
-    "mnnFingerprint": "363ca796c30dc875a1f40b4a",
-    "nativeAdapterAbiVersion": 4
+    "fingerprint": "89d92a4f26ae388671e673fb",
+    "mnnFingerprint": "179263f81d2c06fdb9ce1346",
+    "nativeAdapterAbiVersion": 7
   },
   "libraries": {
     "libMNN.so": {
-      "buildId": "9ba9c9f3904c5854b01ff2096b03740415338462",
-      "sha256": "eb2572e8855e3623d11d5821627e1de82e1b9f6e011b0ff824fd6f21ca95b828",
-      "sizeBytes": 9556984
-    },
-    "libMNN_htpops.so": {
-      "buildId": "699ac78b4d53e6d1bea6b5063d470810b44ec3cc",
-      "sha256": "2877aac099ffe483c2f735deea6280a0fef54f1149684d598abb4866efc2248a",
-      "sizeBytes": 16296
+      "buildId": "c7fec4c7c2454cf9b43e26616f18680b84c595bc",
+      "sha256": "ff396046e26e0f045560580cf8615a9537ebc979871b383a65a6fe971826a08c",
+      "sizeBytes": 9403328
     },
     "libmnn_engine_jni.so": {
-      "buildId": "0d99b0bf22b2b6824e18da050c3525b5708d8534",
-      "sha256": "d2669937ba4282b33c12bfd60b99e18e3d69c3f25328217c25d37bad87bf7d0a",
-      "sizeBytes": 247720
+      "buildId": "bd59c6b278ab3ac2a1b720e48f315d6983632501",
+      "sha256": "cebbbe33f386e721d8d7eda5d8af738f1c2a5378d7378ad55256f13fb90120bc",
+      "sizeBytes": 409160
     }
   },
   "runtime": {
     "compiledBackends": [
       "cpu",
       "opencl",
-      "vulkan",
-      "hexagon"
+      "vulkan"
     ],
     "hexagon": {
-      "assetManifestSha256": "ecf192105e819ee8d16fa2c1b9f3fdba3b3182ba67dedfd55cb45e708cb8bf8b",
-      "assets": {
-        "v73/libMNN_htpops_skel.so": {
-          "sha256": "09669ebceb57c64deb78ec71692cfed9d5b7104a66e06652c88266d16054d1cf",
-          "sizeBytes": 418352
-        },
-        "v73/libc++.so.1": {
-          "sha256": "1d4539d20ca22778d38f7c89a9b43bb68c219a99ca599eddfe2f0f02e4bd80d7",
-          "sizeBytes": 4514240
-        },
-        "v73/libc++abi.so.1": {
-          "sha256": "4493c24f2b591e7797b35f0dc1c1bfc77bf09301354534e7756dd38251dae48f",
-          "sizeBytes": 980320
-        },
-        "v75/libMNN_htpops_skel.so": {
-          "sha256": "62484e98acc9064e36ebc70e01b9746262d7f8627f32cf8b462032ac4146f22d",
-          "sizeBytes": 418352
-        },
-        "v75/libc++.so.1": {
-          "sha256": "b6d7d626dd5a3bf9c3cbc0e76c20148ad7fa1a5e2d2597eccf5a21fe01816f28",
-          "sizeBytes": 4514240
-        },
-        "v75/libc++abi.so.1": {
-          "sha256": "3a6fd1ce9163d9c0f5362167c6830b8bc0f55e21154cf841b199fc8f66c8d63e",
-          "sizeBytes": 980320
-        },
-        "v79/libMNN_htpops_skel.so": {
-          "sha256": "3d75672f84be44d4cf0d2ad751a7748f0ae550c7597849b60fd8f8345bf3a543",
-          "sizeBytes": 426672
-        },
-        "v79/libc++.so.1": {
-          "sha256": "ded681e4a98662e933486a553b86efd2b7cc72bb99d1963b15e3e8ee0422f2e0",
-          "sizeBytes": 4514240
-        },
-        "v79/libc++abi.so.1": {
-          "sha256": "52c37aa56001e7d2ccb604fb97f98ac87023c37cb67b66046c415d6a3038b4f6",
-          "sizeBytes": 980320
-        },
-        "v81/libMNN_htpops_skel.so": {
-          "sha256": "8a3e4db382a04a03fb152bce67d8d8624c4dccc9b80f2100a00db48bd107cfad",
-          "sizeBytes": 426512
-        },
-        "v81/libc++.so.1": {
-          "sha256": "11f6ffc21bc68da965d9f9c1ea667cd64c1fc9120563a7cd49f1da09f693a612",
-          "sizeBytes": 4514240
-        },
-        "v81/libc++abi.so.1": {
-          "sha256": "97114fcbea5dc729c4751ca0fa05c928b322bcabc584624638498ff9b8d827d7",
-          "sizeBytes": 980320
-        }
-      },
-      "dspArchitectures": [
-        "v73",
-        "v75",
-        "v79",
-        "v81"
-      ],
-      "runtimePackaged": true,
-      "stubAbiVersion": 1
+      "runtimePackaged": false
     },
     "vulkanMode": "buffer"
   },

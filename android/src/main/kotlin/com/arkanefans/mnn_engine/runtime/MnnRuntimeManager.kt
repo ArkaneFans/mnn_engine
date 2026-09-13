@@ -3,6 +3,7 @@ package com.arkanefans.mnn_engine.runtime
 import android.os.SystemClock
 import com.arkanefans.mnn_engine.MnnEngineOperationException
 import com.arkanefans.mnn_engine.logging.MnnLogStore
+import com.arkanefans.mnn_engine.logging.MnnNativeDiagnostics
 import com.arkanefans.mnn_engine.model.MnnModelInfo
 import com.arkanefans.mnn_engine.model.MnnTestDirectories
 import com.arkanefans.mnn_engine.model.MnnTestModelRepository
@@ -61,10 +62,11 @@ class MnnRuntimeManager(
             activeModel?.takeIf {
                 it.modelId == model.modelId && it.backend == options.backend.wireName && nativeSession != null
             }?.let {
-                logStore.info("runtime", "Reusing loaded model ${model.modelId}")
+                logStore.debug("runtime", "Reusing loaded model ${model.modelId}")
                 return it
             }
             onStateChanged("loading", "idle", activeModel, null)
+            var nativeStartedAt: Long? = null
             try {
                 nativeSession?.close()
                 nativeSession = null
@@ -79,8 +81,9 @@ class MnnRuntimeManager(
                 }
                 val runtimeConfig = createRuntimeConfig(model, options)
                 val dspInfo = (capability["dspArchitecture"] as? String)?.let { ", dsp=$it" }.orEmpty()
-                logStore.info("jni", "Creating native session for ${model.modelId}, backend=${options.backend.wireName}$dspInfo")
+                logStore.debug("runtime", "Loading ${model.modelId}, backend=${options.backend.wireName}$dspInfo")
                 val loadStartedAt = SystemClock.elapsedRealtime()
+                nativeStartedAt = System.currentTimeMillis()
                 val session = MnnNativeSession.load(model.configPath, runtimeConfig.toString())
                 val loadDurationMs = SystemClock.elapsedRealtime() - loadStartedAt
                 baseConfigJson = runtimeConfig.toString()
@@ -90,10 +93,10 @@ class MnnRuntimeManager(
                 onStateChanged("loaded", "idle", activeModel, null)
                 return activeModel!!
             } catch (error: Throwable) {
+                nativeStartedAt?.let { MnnNativeDiagnostics.capture(logStore, it) }
                 nativeSession?.close()
                 nativeSession = null
                 activeModel = null
-                logStore.error("runtime", "Failed to load ${model.modelId}", error)
                 onStateChanged("error", "idle", null, error.message)
                 throw error
             }
@@ -138,7 +141,8 @@ class MnnRuntimeManager(
             }
         }
         onStateChanged("loaded", "generating", generationModel, null)
-        logStore.info("request", "Generation started for ${generationModel.modelId}")
+        val generationStartedAt = System.currentTimeMillis()
+        logStore.debug("request", "Generation started for ${generationModel.modelId}, backend=${generationModel.backend}")
         var failureMessage: String? = null
         return try {
             val config = JsonParser.parseString(baseConfigJson).asJsonObject
@@ -169,7 +173,8 @@ class MnnRuntimeManager(
             }
         } catch (error: Throwable) {
             failureMessage = error.message
-            logStore.error("request", "Generation failed", error)
+            MnnNativeDiagnostics.capture(logStore, generationStartedAt)
+            // The HTTP boundary reports the failure once for both response modes.
             throw error
         } finally {
             synchronized(lock) {
@@ -186,7 +191,9 @@ class MnnRuntimeManager(
 
     fun cancelGeneration() {
         nativeSession?.cancel()
-        logStore.info("request", "Generation cancellation requested")
+        if (generating.get()) {
+            logStore.debug("request", "Generation cancellation requested")
+        }
     }
 
     fun release() {

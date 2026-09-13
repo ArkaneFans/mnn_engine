@@ -188,12 +188,13 @@ records the selection. MNN can still schedule unsupported operators on CPU.
 A model's separate `mllm` encoder configuration is preserved; otherwise Omni
 shares the main backend. Validate vision models on the chosen accelerator.
 
-The bundled Hexagon runtime includes **v73, v75, v79 and v81** in one APK. The
+Default packages contain CPU/OpenCL/Vulkan only; Hexagon is Experimental.
+Explicit experimental builds can bundle **v73, v75, v79 and v81** in one APK. The
 plugin queries the device's cDSP architecture and extracts/loads only the exact
 match; `MnnBackendCapability.dspArchitecture` reports the detected ISA. No manual
 architecture selection is needed. A compatible Qualcomm DSP with FP16 HMX and
-OEM FastRPC access is still required. Builds with `include_hexagon=false` omit
-the optional stub/DSP assets and report Hexagon as unavailable. See
+OEM FastRPC access is still required. Builds with `include_hexagon=false` disable
+the host backend and omit the stub/DSP assets. See
 [native build instructions](doc/BUILDING_NATIVE.md).
 For Hexagon, the host app must set `packaging.jniLibs.useLegacyPackaging = true`
 so the Android stub exists in `nativeLibraryDir`.
@@ -283,7 +284,8 @@ can reproduce them locally or with the repository's GitHub Actions workflow;
 consumer builds never invoke that toolchain.
 
 Run **Build Android native libraries** in Actions to download the `.so` files,
-checksums and build logs. The default `include_hexagon=true` builds all four DSP runtimes with
+checksums and build logs. The default `include_hexagon=false` builds CPU/GPU only,
+including on `native-v*` tags. Explicit opt-in builds all four DSP runtimes with
 the pinned SDK Docker image; no SDK secret is required. A supplied SDK archive
 is also supported. Example APK verification is optional. See the
 [GitHub Actions instructions](doc/BUILDING_NATIVE.md#recommended-github-actions).

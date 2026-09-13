@@ -91,7 +91,13 @@ internal object MnnNativeBridge {
 
     fun loadFailureMessage(): String? = loadError?.message
 
+    fun takeDiagnosticLogs(sinceMillis: Long): String {
+        check(loaded) { "MNN native libraries are unavailable." }
+        return nativeTakeDiagnosticLogs(sinceMillis)
+    }
+
     private external fun nativeGetVersion(): String
+    private external fun nativeTakeDiagnosticLogs(sinceMillis: Long): String
     private external fun nativeConfigureBackends(nativeLibraryDir: String, dspLibraryDir: String)
     private external fun nativeDetectHexagonArchitecture(nativeLibraryDir: String): String
     private external fun nativeGetBackendCapabilities(): String

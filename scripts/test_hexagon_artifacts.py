@@ -44,11 +44,12 @@ class HexagonArtifactsTest(unittest.TestCase):
             artifacts.describe(directory, "test-commit", arch)
         return source
 
-    def plugin(self):
+    def plugin(self, hexagon=True):
         plugin = self.root / "plugin"
         (plugin / "native").mkdir(parents=True)
         artifacts.write_json(plugin / "native/android-arm64-v8a.json", {
-            "source": {"mnnCommit": "test-commit"}, "libraries": {}
+            "source": {"mnnCommit": "test-commit"}, "libraries": {},
+            "build": {"cmakeFlags": ["MNN_HEXAGON=ON" if hexagon else "MNN_HEXAGON=OFF"]},
         })
         return plugin
 
@@ -104,6 +105,7 @@ class HexagonArtifactsTest(unittest.TestCase):
         files = artifacts.validate_packaged_manifest(native, info)
         self.assertEqual(info["schemaVersion"], 2)
         self.assertEqual(native["runtime"]["hexagon"]["dspArchitectures"], list(artifacts.ARCHITECTURES))
+        self.assertEqual(native["runtime"]["compiledBackends"], ["cpu", "opencl", "vulkan", "hexagon"])
         self.assertEqual(len(files), 12)
         self.assertEqual({path.name for path in assets.iterdir()}, {"manifest.json", *artifacts.ARCHITECTURES})
         for name, item in files.items():
@@ -181,7 +183,8 @@ class HexagonArtifactsTest(unittest.TestCase):
         native = plugin / "native"
         native.mkdir(parents=True)
         artifacts.write_json(native / "android-arm64-v8a.json", {
-            "source": {"mnnCommit": "test-commit"}, "libraries": {artifacts.STUB: {}}
+            "source": {"mnnCommit": "test-commit"}, "libraries": {artifacts.STUB: {}},
+            "build": {"cmakeFlags": ["MNN_HEXAGON=OFF"]},
         })
         stub = plugin / "android/src/main/jniLibs/arm64-v8a" / artifacts.STUB
         stub.parent.mkdir(parents=True)
@@ -192,9 +195,25 @@ class HexagonArtifactsTest(unittest.TestCase):
         artifacts.package(plugin, None, "unused-readelf")
         result = json.loads((native / "android-arm64-v8a.json").read_text())
         self.assertFalse(result["runtime"]["hexagon"]["runtimePackaged"])
+        self.assertEqual(result["runtime"]["compiledBackends"], ["cpu", "opencl", "vulkan"])
         self.assertNotIn(artifacts.STUB, result["libraries"])
         self.assertFalse(stub.exists())
         self.assertFalse(assets.exists())
+
+    def test_rejects_dsp_packaging_when_host_backend_was_not_built(self):
+        plugin = self.plugin(hexagon=False)
+        manifest_path = plugin / "native/android-arm64-v8a.json"
+        before = manifest_path.read_bytes()
+        with self.assertRaisesRegex(ValueError, "MNN_HEXAGON=ON"):
+            artifacts.package(plugin, self.root, "unused-readelf")
+        self.assertEqual(before, manifest_path.read_bytes())
+
+    def test_host_only_manifest_reports_compiled_hexagon_without_dsp(self):
+        plugin = self.plugin()
+        artifacts.package(plugin, None, "unused-readelf")
+        result = json.loads((plugin / "native/android-arm64-v8a.json").read_text())
+        self.assertIn("hexagon", result["runtime"]["compiledBackends"])
+        self.assertFalse(result["runtime"]["hexagon"]["runtimePackaged"])
 
 
 if __name__ == "__main__":
