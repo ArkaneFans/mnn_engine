@@ -239,9 +239,12 @@ Wi-Fi、热点、VPN 等 IPv4 接口访问。除非设备处于可信网络，�
 ## 运行约束
 
 - 启动 Server 前必须先加载模型。
-- Server 运行时不能卸载、删除或替换活跃模型。
+- 主动卸载、删除或替换活跃模型前，必须先停止 Server。
 - 第二个并发生成请求会收到 HTTP 429。
 - `cancelGeneration()` 只取消当前生成，不会停止 Server。
+- 生成异常会释放当前模型，并将运行快照中的 `activeModel` 清空。依次调用
+  `stopServer()`、`loadModel()`、`startServer()` 即可重新加载；正常完成、
+  达到长度上限及取消生成仍保留模型，后续请求可继续使用。
 - 完整停止顺序为 `stopServer()`，然后调用 `unloadModel()`。
 
 ## Native 产物与可复现构建

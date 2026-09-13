@@ -172,8 +172,16 @@ class MnnRuntimeManager(
                 )
             }
         } catch (error: Throwable) {
-            failureMessage = error.message
+            failureMessage = error.message ?: "MNN generation failed."
             MnnNativeDiagnostics.capture(logStore, generationStartedAt)
+            synchronized(lock) {
+                // A failed native session cannot recover through reset(). Clear
+                // the resident model too so host caches request a real reload.
+                nativeSession = null
+                activeModel = null
+                baseConfigJson = "{}"
+                runCatching { session.close() }.onFailure { error.addSuppressed(it) }
+            }
             // The HTTP boundary reports the failure once for both response modes.
             throw error
         } finally {

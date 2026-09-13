@@ -11,6 +11,7 @@
 - Default GitHub Actions and local builds to CPU/OpenCL/Vulkan; Hexagon requires explicit opt-in, including for its host backend. Tag builds use the default CPU/GPU bundle.
 - Upgrade JNI adapter ABI to 7, keep bounded native error context through a direct MNN log bridge, and remove temporary logger hooks, Logcat fallback and verbose diagnostic dumps.
 - Preserve MNN 3.6.1 MTOK added-token decoding, generation error checks and the experimental Hexagon model-format guard; maintain native/tokenizer regression tests independently of device investigation tools.
+- Release failed generation sessions and clear resident-model state so loading the same model rebuilds the runtime; preserve reuse after normal completion, length limits and cancellation.
 
 - Align multi-turn tool-call messages and completion responses with `llama-server`.
 - Support both JSON and tagged-parameter MNN tool-call output formats.

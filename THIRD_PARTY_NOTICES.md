@@ -20,8 +20,9 @@ Flutter package.
 
 ## Optional Hexagon runtime
 
-The common package compiles MNN's Hexagon host backend but does not include
-the Qualcomm SDK or SDK-built DSP libraries. Optional Hexagon packages add
+The common package includes CPU, OpenCL and Vulkan, with MNN's Hexagon host
+backend disabled. It does not include the Qualcomm SDK or SDK-built runtime
+libraries. Optional Hexagon packages explicitly enable the host backend and add
 one SDK-built ARM64 stub and v73/v75/v79/v81 DSP skeletons with their matching
 DSP C++ runtimes; their provenance and
 hashes are recorded in the native and asset manifests. Distributors of those

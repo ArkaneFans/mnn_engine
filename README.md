@@ -260,11 +260,15 @@ Always configure an API key unless the device is on a trusted network.
 ## Runtime rules
 
 - A model must be loaded before the server starts.
-- The active model cannot be unloaded, deleted, or replaced while the server
-  is running.
+- Stop the server before explicitly unloading, deleting, or replacing the
+  active model.
 - A second concurrent generation receives HTTP 429.
 - `cancelGeneration()` cancels only the active generation; it does not stop the
   server.
+- A generation failure releases the resident model and clears `activeModel` in
+  runtime snapshots. Recover with `stopServer()`, `loadModel()`, then
+  `startServer()`. Normal completion, length limits, and cancellation keep the
+  model available for subsequent requests.
 - Complete shutdown order is `stopServer()` followed by `unloadModel()`.
 
 ## Native binaries and reproducibility
