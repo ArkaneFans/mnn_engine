@@ -17,6 +17,7 @@
       "MNN_USE_LOGCAT=ON",
       "MNN_ENGINE_LOG_BRIDGE=ON",
       "MNN_ENGINE_TOKENIZER_ADDED_TOKENS=ON",
+      "MNN_ENGINE_PREFILL_CANCELLATION=ON",
       "MNN_SEP_BUILD=OFF",
       "MNN_KLEIDIAI=OFF",
       "MNN_BUILD_DIFFUSION=OFF",
@@ -31,20 +32,20 @@
       "MNN_BUILD_TEST=OFF",
       "MNN_BUILD_BENCHMARK=OFF"
     ],
-    "fingerprint": "89d92a4f26ae388671e673fb",
-    "mnnFingerprint": "179263f81d2c06fdb9ce1346",
-    "nativeAdapterAbiVersion": 7
+    "fingerprint": "c3821cd66a849e5ac60a9ed2",
+    "mnnFingerprint": "929117dbf6247e2e4773688e",
+    "nativeAdapterAbiVersion": 8
   },
   "libraries": {
     "libMNN.so": {
-      "buildId": "c7fec4c7c2454cf9b43e26616f18680b84c595bc",
-      "sha256": "ff396046e26e0f045560580cf8615a9537ebc979871b383a65a6fe971826a08c",
-      "sizeBytes": 9403328
+      "buildId": "c5970cdcd7684424e836347d993741bdce459f8c",
+      "sha256": "68521c54ec460bc460834738f0a347fc5dba48783d517497c676c408357a5aaa",
+      "sizeBytes": 9406232
     },
     "libmnn_engine_jni.so": {
-      "buildId": "bd59c6b278ab3ac2a1b720e48f315d6983632501",
-      "sha256": "cebbbe33f386e721d8d7eda5d8af738f1c2a5378d7378ad55256f13fb90120bc",
-      "sizeBytes": 409160
+      "buildId": "c86cc8b67df7e27f4cf33dba67a85e279c9060b8",
+      "sha256": "c3378b393d6985e7e5e6513a45a5988d05d46b190c61e14f4f9e6e2476e508b4",
+      "sizeBytes": 415040
     }
   },
   "runtime": {

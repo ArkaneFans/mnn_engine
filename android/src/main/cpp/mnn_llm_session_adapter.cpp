@@ -2,6 +2,7 @@
 #include "mnn_backend_support.hpp"
 #include "mnn_native_diagnostics.hpp"
 #include "mnn_hexagon_model_check.hpp"
+#include "mnn_prefill_control.hpp"
 
 #include <algorithm>
 #include <sstream>
@@ -18,6 +19,16 @@ using nlohmann::json;
 namespace {
 
 constexpr int kNoTokenLimit = -1;
+
+class PrefillCancellationScope {
+public:
+    explicit PrefillCancellationScope(std::atomic<bool>& cancelled) {
+        mnn_engine_set_prefill_cancel_callback([](void* flag) {
+            return static_cast<std::atomic<bool>*>(flag)->load();
+        }, &cancelled);
+    }
+    ~PrefillCancellationScope() { mnn_engine_set_prefill_cancel_callback(nullptr, nullptr); }
+};
 
 const char* statusName(LlmStatus status) {
     switch (status) {
@@ -224,7 +235,7 @@ MnnLlmSessionAdapter::~MnnLlmSessionAdapter() {
 
 bool MnnLlmSessionAdapter::load(std::string* errorMessage) {
     clearMnnNativeDiagnostics();
-    const auto config = configJson_.empty() ? json::object() : json::parse(configJson_);
+    auto config = configJson_.empty() ? json::object() : json::parse(configJson_);
     backend_ = config.value("backend_type", "cpu");
     const auto capability = probeMnnBackend(backend_);
     if (!capability.available) {
@@ -236,7 +247,15 @@ bool MnnLlmSessionAdapter::load(std::string* errorMessage) {
         if (errorMessage != nullptr) *errorMessage = "createLLM failed for " + configPath_;
         return false;
     }
-    if (!configJson_.empty() && !llm_->set_config(configJson_)) {
+    auto effectiveConfig = json::parse(llm_->dump_config());
+    effectiveConfig.update(config);
+    // Inspect the merged model metadata, including llm_config.json. Legacy
+    // GLM/integer masks need a full prefill; keep explicit chunk settings intact.
+    if (!effectiveConfig.contains("chunk") && !effectiveConfig.contains("chunk_limits") &&
+        effectiveConfig.value("attention_mask", "float") == "float") {
+        config["chunk"] = 128;
+    }
+    if (!llm_->set_config(config.dump())) {
         if (errorMessage != nullptr) *errorMessage = "MNN rejected the runtime config";
         return false;
     }
@@ -277,12 +296,16 @@ MnnLlmSessionAdapter::Metrics MnnLlmSessionAdapter::generate(
         throw std::invalid_argument("maxTokens must be -1 or greater");
     }
     const ChatMessages messages = parseMessages(messagesJson);
-    cancelRequested_.store(false);
     llm_->reset();
     restoreRunningStatusIfTerminal();
     if (hasRuntimeError(llm_->getContext())) {
         failGeneration("MNN generation cannot start; reload the model after a runtime error",
                 "stage=request_begin, backend=" + backend_ + ", " + contextSummary(llm_->getContext()));
+    }
+    if (cancelRequested_.load()) {
+        Metrics metrics;
+        metrics.finishReason = "cancelled";
+        return metrics;
     }
 
     SteppingStreamBuffer streamBuffer(onToken);
@@ -291,7 +314,10 @@ MnnLlmSessionAdapter::Metrics MnnLlmSessionAdapter::generate(
     const auto hasTokenBudget = [&]() {
         return maxTokens == kNoTokenLimit || generated < maxTokens;
     };
-    llm_->response(messages, &output, "<eop>", 0);
+    {
+        PrefillCancellationScope cancellation(cancelRequested_);
+        llm_->response(messages, &output, "<eop>", 0);
+    }
     // response(..., 0) performs prefill. A failed forward leaves an error
     // status, and generate(1) would just return without explaining the cause.
     if (hasRuntimeError(llm_->getContext())) {
@@ -365,6 +391,7 @@ void MnnLlmSessionAdapter::cancel() {
 
 void MnnLlmSessionAdapter::reset() {
     std::lock_guard<std::mutex> lock(generationMutex_);
+    cancelRequested_.store(false);
     if (llm_ != nullptr) llm_->reset();
 }
 

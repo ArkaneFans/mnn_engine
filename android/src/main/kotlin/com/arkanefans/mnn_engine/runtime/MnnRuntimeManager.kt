@@ -123,17 +123,25 @@ class MnnRuntimeManager(
         temperature: Double?,
         topP: Double?,
         maxTokens: Int,
+        canGenerate: () -> Boolean = { true },
         onToken: (String) -> Boolean,
     ): GenerationResult {
         val (session, generationModel) = synchronized(lock) {
             if (!generating.compareAndSet(false, true)) {
+                if (!canGenerate()) throw ServerStoppingException()
                 throw GenerationBusyException()
             }
             try {
+                // Announce generation before checking admission: a concurrent
+                // stop either closes this gate or waits to cancel after reset().
+                if (!canGenerate()) throw ServerStoppingException()
                 val currentSession = nativeSession
                     ?: throw IllegalStateException("No MNN model is loaded.")
                 val currentModel = activeModel
                     ?: throw IllegalStateException("No active MNN model is available.")
+                // Prepare before cancellation can acquire this lock. Native generate()
+                // must not clear a stop received while the request is starting.
+                currentSession.reset()
                 currentSession to currentModel
             } catch (error: Throwable) {
                 generating.set(false)
@@ -198,9 +206,14 @@ class MnnRuntimeManager(
     }
 
     fun cancelGeneration() {
-        nativeSession?.cancel()
-        if (generating.get()) {
-            logStore.debug("request", "Generation cancellation requested")
+        // Model loading may hold lock for seconds. An idle cancel is a no-op
+        // and must not block the platform/UI thread behind that work.
+        if (!generating.get()) return
+        synchronized(lock) {
+            if (generating.get()) {
+                nativeSession?.cancel()
+                logStore.debug("request", "Generation cancellation requested")
+            }
         }
     }
 
@@ -225,5 +238,6 @@ class MnnRuntimeManager(
     }
 
     class GenerationBusyException : IllegalStateException("A generation request is already active.")
+    class ServerStoppingException : IllegalStateException("MNN API server is stopping.")
 
 }

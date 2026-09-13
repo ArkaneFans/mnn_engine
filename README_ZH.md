@@ -240,8 +240,13 @@ Wi-Fi、热点、VPN 等 IPv4 接口访问。除非设备处于可信网络，�
 
 - 启动 Server 前必须先加载模型。
 - 主动卸载、删除或替换活跃模型前，必须先停止 Server。
-- 第二个并发生成请求会收到 HTTP 429。
-- `cancelGeneration()` 只取消当前生成，不会停止 Server。
+- 第二个并发生成请求会收到 HTTP 429，不排队。
+- `stopServer()` 先关闭生成入口，再取消活跃请求。HTTP 监听关闭过程中，
+  新请求返回 HTTP 503（`server_stopping`）；尚在准备输入的请求也不会启动推理。
+- `cancelGeneration()` 只取消当前生成，不会停止 Server。标准因果模型的 prefill
+  在分段边界检查取消，默认每段 128 token；保留模型指定的 `chunk` 和 `chunk_limits`，
+  `chunk: 0` 可禁用分段，旧式 GLM/整数 mask 模型默认保留整段 prefill。
+  正在执行的单段计算或图像/音频编码器调用仍需完成后才能响应取消。
 - 生成异常会释放当前模型，并将运行快照中的 `activeModel` 清空。依次调用
   `stopServer()`、`loadModel()`、`startServer()` 即可重新加载；正常完成、
   达到长度上限及取消生成仍保留模型，后续请求可继续使用。

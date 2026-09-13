@@ -32,6 +32,8 @@ public:
             int maxTokens,
             const std::function<bool(const std::string&)>& onToken);
     void cancel();
+    // Prepare a new request. The owner serializes this with cancel(); generate()
+    // deliberately preserves cancellations received before native entry.
     void reset();
 
 private:

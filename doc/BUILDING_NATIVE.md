@@ -22,7 +22,7 @@ Hexagon is retained for development but hidden in ServLlama. Building its host
 backend requires explicit `MNN_HEXAGON=ON`; executing on the DSP also requires
 the optional SDK-built resources below.
 
-The current native adapter ABI is **7**. The common build also
+The current native adapter ABI is **8**. The common build also
 requires `MNN_USE_LOGCAT=ON` and `MNN_ENGINE_LOG_BRIDGE=ON`. The plugin-owned
 `scripts/cmake/mnn_log_bridge.cmake` attaches a direct log bridge to libMNN through
 `CMAKE_PROJECT_MNN_INCLUDE` and `--wrap=__android_log_print`, without changing
@@ -43,6 +43,22 @@ includes this compatibility patch. Its source is fingerprinted; unexpected
 upstream source changes fail configuration for review. Rebuild and package MNN
 and JNI together, then run `bash scripts/test_mnn_tokenizer.sh "$PWD"`.
 `MNN_BUILD_JOBS=4` limits native build memory use in WSL.
+
+`MNN_ENGINE_PREFILL_CANCELLATION=ON` is also required. The build-copy integration
+in `scripts/cmake/mnn_prefill_compat.cmake` adds cancellation checks to MNN's
+existing chunk loops, keeps full prompt counts, and slices multimodal position
+IDs and deep-stack tensors consistently with their embeddings. Images/audio are
+encoded before chunking; an encoder call itself cannot be interrupted. A
+thread-local C callback reads the adapter's atomic cancellation flag, so only
+the generation thread changes MNN state. The runtime prepares each request under
+the same lock as cancellation; native entry never clears a newly received stop.
+Normal cancellation keeps the loaded model, and the next request resets partial
+KV state. Integration sources and the callback export are verified by the
+build fingerprint and artifact checks. See [native tests](../test/native/README.md)
+for regression commands, including an optional real-model CPU check.
+The adapter chooses the default chunk size after reading MNN's merged model
+metadata: floating causal masks use 128 tokens; legacy GLM/integer masks keep
+the upstream full-prefill default. Explicit `chunk`/`chunk_limits` remain intact.
 
 On the tested 8 Elite, W4/C4 Qwen3-0.6B short conversations now work in both
 official CLI and the app; non-C4 Attention is rejected before model loading.
@@ -315,7 +331,7 @@ alignment. The outputs are:
 - `jniLibs/arm64-v8a/libMNN_htpops.so`: Android stub.
 - `assets/mnn/hexagon/manifest.json`: schema 2, with resource hashes and build provenance for each architecture.
 - `assets/mnn/hexagon/<architecture>/`: DSP skeleton, `libc++.so.1` and `libc++abi.so.1`.
-- `native/android-arm64-v8a.json`: JNI ABI 7; compiled backends reflect actual build flags and `runtime.hexagon.dspArchitectures` lists the packaged targets.
+- `native/android-arm64-v8a.json`: JNI ABI 8; compiled backends reflect actual build flags and `runtime.hexagon.dspArchitectures` lists the packaged targets.
 
 The DSP files must remain assets, not ARM64 JNI libraries. On the first backend
 capability request, FastRPC identifies the device ISA. Android verifies and

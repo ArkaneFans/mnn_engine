@@ -262,9 +262,16 @@ Always configure an API key unless the device is on a trusted network.
 - A model must be loaded before the server starts.
 - Stop the server before explicitly unloading, deleting, or replacing the
   active model.
-- A second concurrent generation receives HTTP 429.
+- A second concurrent generation receives HTTP 429; requests are not queued.
+- `stopServer()` closes generation admission before cancelling the active
+  request. While the HTTP listener is shutting down, new requests receive
+  HTTP 503 (`server_stopping`); requests still preparing input cannot start inference.
 - `cancelGeneration()` cancels only the active generation; it does not stop the
-  server.
+  server. Standard causal models check prefill cancellation between chunks
+  (128 tokens by default). Explicit `chunk`/`chunk_limits` are preserved;
+  `chunk: 0` disables splitting, and legacy GLM/integer masks keep full prefill
+  by default. A running chunk or image/audio encoder call must finish before
+  cancellation takes effect.
 - A generation failure releases the resident model and clears `activeModel` in
   runtime snapshots. Recover with `stopServer()`, `loadModel()`, then
   `startServer()`. Normal completion, length limits, and cancellation keep the

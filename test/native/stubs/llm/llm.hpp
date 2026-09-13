@@ -3,11 +3,16 @@
 // A controllable LLM boundary for the adapter's error/streaming regression
 // tests. Actual MNN headers and ABI are verified by the Android native build.
 #include <cstdint>
+#include <functional>
 #include <ostream>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
+#include "nlohmann/json.hpp"
+
+namespace MNN::Transformer { struct LlmContext; }
+namespace mnn_engine { bool cancelPrefill(MNN::Transformer::LlmContext*); }
 
 namespace MNN::Transformer {
 using ChatMessages = std::vector<std::pair<std::string, std::string>>;
@@ -34,6 +39,11 @@ struct FakeLlmBehavior {
     int prefillCalls = 0;
     int decodeCalls = 0;
     int loadCalls = 0;
+    int prefillBatches = 1;
+    int processedBatches = 0;
+    std::function<void(int)> onPrefillBatch;
+    std::string modelConfig = "{}";
+    std::string effectiveConfig = "{}";
 };
 inline FakeLlmBehavior fakeLlm;
 
@@ -41,8 +51,12 @@ class Llm {
 public:
     static Llm* createLLM(const std::string&) { return new Llm; }
     static void destroy(Llm* llm) { delete llm; }
-    bool set_config(const std::string&) { return true; }
-    std::string dump_config() { return "{}"; }
+    bool set_config(const std::string& config) {
+        config_.update(nlohmann::json::parse(config));
+        fakeLlm.effectiveConfig = config_.dump();
+        return true;
+    }
+    std::string dump_config() { return config_.dump(); }
     bool load() {
         ++fakeLlm.loadCalls;
         context_.status = fakeLlm.loadStatus;
@@ -60,8 +74,18 @@ public:
         ++fakeLlm.prefillCalls;
         output_ = output;
         endMarker_ = end;
-        context_.prompt_len = 7;
-        context_.status = fakeLlm.prefillStatus;
+        context_.prompt_len = 7 * fakeLlm.prefillBatches;
+        context_.prefill_us = 0;
+        context_.status = LlmStatus::RUNNING;
+        for (int i = 0; i < fakeLlm.prefillBatches; ++i) {
+            if (cancelPrefill()) return;
+            ++fakeLlm.processedBatches;
+            context_.all_seq_len += 7;
+            context_.prefill_us += 10;
+            if (fakeLlm.onPrefillBatch) fakeLlm.onPrefillBatch(i);
+            context_.status = fakeLlm.prefillStatus;
+            if (cancelPrefill()) return;
+        }
     }
     void generate(int maxTokens) {
         if (maxTokens != 1) throw std::logic_error("Expected one-token step");
@@ -77,6 +101,8 @@ public:
         if (fakeLlm.emitEndMarker) *output_ << endMarker_ << std::flush;
     }
 private:
+    bool cancelPrefill() { return mnn_engine::cancelPrefill(&context_); }
+    nlohmann::json config_ = nlohmann::json::parse(fakeLlm.modelConfig);
     LlmContext context_;
     std::ostream* output_ = nullptr;
     std::string endMarker_;

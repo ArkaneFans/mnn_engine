@@ -66,9 +66,9 @@ for symbol in "${required_symbols[@]}"; do
 done
 
 mnn_symbols="$("${readelf_bin}" --dyn-syms -W "${mnn_library}")"
-for symbol in mnn_engine_set_native_log_sink; do
+for symbol in mnn_engine_set_native_log_sink mnn_engine_set_prefill_cancel_callback; do
     awk -v name="${symbol}" '$7 != "UND" && $8 == name { found = 1 } END { exit !found }' \
-        <<<"${mnn_symbols}" || fail "libMNN.so is missing native log bridge export ${symbol}"
+        <<<"${mnn_symbols}" || fail "libMNN.so is missing integration export ${symbol}"
 done
 
 python3 - "${build_info}" "${plugin_root}/MNN" <<'PY'
@@ -105,8 +105,8 @@ if info["androidPlatform"] != "android-28":
     raise SystemExit(f"unexpected Android platform in build info: {info['androidPlatform']}")
 if info["cmakeVersion"] != "3.22.1":
     raise SystemExit(f"unexpected CMake version in build info: {info['cmakeVersion']}")
-if int(info["nativeAdapterAbiVersion"]) < 7:
-    raise SystemExit("nativeAdapterAbiVersion must be at least 7")
+if int(info["nativeAdapterAbiVersion"]) < 8:
+    raise SystemExit("nativeAdapterAbiVersion must be at least 8")
 flags = set(info["cmakeFlags"])
 if len(flags & {"MNN_HEXAGON=ON", "MNN_HEXAGON=OFF"}) != 1:
     raise SystemExit("build info must specify exactly one MNN_HEXAGON mode")
@@ -114,6 +114,7 @@ for expected in (
     "MNN_BUILD_FOR_ANDROID_COMMAND=ON",
     "MNN_ENGINE_LOG_BRIDGE=ON",
     "MNN_ENGINE_TOKENIZER_ADDED_TOKENS=ON",
+    "MNN_ENGINE_PREFILL_CANCELLATION=ON",
     "MNN_BUILD_LLM_OMNI=ON",
     "MNN_KLEIDIAI=OFF",
     "MNN_OPENCL=ON",

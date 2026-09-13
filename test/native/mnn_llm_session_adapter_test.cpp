@@ -1,9 +1,12 @@
 #include "mnn_llm_session_adapter.hpp"
 #include "mnn_backend_support.hpp"
 #include "mnn_hexagon_model_check.hpp"
+#include "mnn_prefill_control.hpp"
 
 #include <iostream>
 #include <stdexcept>
+#include <thread>
+#include <tuple>
 
 using MNN::Transformer::fakeLlm;
 using MNN::Transformer::LlmStatus;
@@ -139,6 +142,102 @@ int main() {
             std::string error;
             require(!adapter.load(&error), "A loaded model in an error state must not be advertised as ready");
             require(error.find("INTERNAL_ERROR(4)") != std::string::npos, "Load error must include status");
+            ++cases;
+        }
+        {
+            fakeLlm = {};
+            MnnLlmSessionAdapter adapter("config.json", "{}");
+            load(adapter);
+            adapter.reset();
+            adapter.cancel();
+            auto metrics = adapter.generate(messages, "{}", 4, [](const auto&) { return false; });
+            require(metrics.finishReason == "cancelled" && metrics.completionTokens == 0 &&
+                        fakeLlm.prefillCalls == 0,
+                    "Cancellation before native entry must not be cleared or enter prefill");
+            adapter.reset();
+            metrics = adapter.generate(messages, "{}", 1, [](const auto&) { return false; });
+            require(metrics.finishReason == "length" && metrics.completionTokens == 1,
+                    "The next prepared request must work after early cancellation");
+            ++cases;
+        }
+        for (int cancelAt : {0, 2}) {
+            fakeLlm = {};
+            fakeLlm.prefillBatches = 3;
+            MnnLlmSessionAdapter adapter("config.json", "{}");
+            load(adapter);
+            fakeLlm.onPrefillBatch = [&](int batch) {
+                if (batch == cancelAt) {
+                    std::thread cancelling([&] { adapter.cancel(); });
+                    cancelling.join();
+                }
+            };
+            auto metrics = adapter.generate(messages, "{}", 4, [](const auto&) { return false; });
+            require(metrics.finishReason == "cancelled" && metrics.completionTokens == 0,
+                    "Prefill cancellation must finish normally without decoding");
+            require(fakeLlm.processedBatches == cancelAt + 1 && fakeLlm.decodeCalls == 0,
+                    "No additional prefill batch or decode may run after cancellation");
+            require(metrics.promptTokens == 21 && metrics.prefillUs == 10 * (cancelAt + 1),
+                    "Cancellation should retain prompt size and completed prefill time");
+            fakeLlm.onPrefillBatch = {};
+            adapter.reset();
+            metrics = adapter.generate(messages, "{}", 2, [](const auto&) { return false; });
+            require(metrics.finishReason == "length" && metrics.completionTokens == 2,
+                    "A prefill-cancelled session must work on the next request");
+            ++cases;
+        }
+        {
+            fakeLlm = {};
+            fakeLlm.prefillBatches = 3;
+            fakeLlm.prefillStatus = LlmStatus::INTERNAL_ERROR;
+            MnnLlmSessionAdapter adapter("config.json", R"({"backend_type":"hexagon"})");
+            load(adapter);
+            fakeLlm.onPrefillBatch = [&](int) { adapter.cancel(); };
+            expectFailure(adapter, 1, "stage=prefill", "INTERNAL_ERROR(4)");
+            require(fakeLlm.processedBatches == 1, "A failing batch must prevent subsequent batches");
+            ++cases;
+        }
+        {
+            mnn_engine_set_prefill_cancel_callback([](void*) { return true; }, nullptr);
+            MNN::Transformer::LlmContext otherContext;
+            otherContext.status = LlmStatus::RUNNING;
+            std::thread other([&] { mnn_engine::cancelPrefill(&otherContext); });
+            other.join();
+            require(otherContext.status == LlmStatus::RUNNING,
+                    "Cancellation callbacks must not leak across generation threads");
+            mnn_engine_set_prefill_cancel_callback(nullptr, nullptr);
+            ++cases;
+        }
+        {
+            for (auto status : {LlmStatus::NORMAL_FINISHED, LlmStatus::MAX_TOKENS_FINISHED}) {
+                MNN::Transformer::LlmContext context;
+                context.status = status;
+                require(!mnn_engine::cancelPrefill(&context) && context.status == status,
+                        "Without cancellation, successful terminal states keep upstream semantics");
+            }
+            ++cases;
+        }
+        {
+            const std::vector<std::tuple<std::string, std::string, int>> configs = {
+                {"{}", "{}", 128},
+                {R"({"attention_mask":"float"})", "{}", 128},
+                {R"({"attention_mask":"glm"})", "{}", 0},
+                {R"({"attention_mask":"glm2"})", "{}", 0},
+                {R"({"attention_mask":"int"})", "{}", 0},
+                {R"({"chunk":0})", "{}", 0},
+                {R"({"chunk":64,"chunk_limits":[64,1]})", "{}", 64},
+                {"{}", R"({"chunk":32})", 32},
+                {"{}", R"({"chunk":0})", 0},
+            };
+            for (const auto& [modelConfig, runtimeConfig, expectedChunk] : configs) {
+                fakeLlm = {};
+                fakeLlm.modelConfig = modelConfig;
+                MnnLlmSessionAdapter adapter("config.json", runtimeConfig);
+                load(adapter);
+                adapter.generate(messages, "{}", 1, [](const auto&) { return false; });
+                const auto effective = nlohmann::json::parse(fakeLlm.effectiveConfig);
+                require(effective.value("chunk", 0) == expectedChunk,
+                        "Default chunking must respect model mask semantics and explicit settings");
+            }
             ++cases;
         }
         std::cout << cases << " native adapter regression cases passed\n";

@@ -7,7 +7,7 @@ cmake_bin="${MNN_CMAKE:-${HOME}/.local/share/mnn_engine/toolchains/cmake-3.22.1/
 android_ndk="${ANDROID_NDK:-${HOME}/android-ndk-r27d}"
 ninja_bin="/usr/bin/ninja"
 verifier_script="${plugin_root}/scripts/verify_mnn_artifacts.sh"
-adapter_abi_version="7"
+adapter_abi_version="8"
 expected_cmake_version="3.22.1"
 hexagon_enabled="${MNN_HEXAGON:-OFF}"
 case "${hexagon_enabled}" in
@@ -54,12 +54,15 @@ ninja_version="$("${ninja_bin}" --version)"
 flags_key='CMAKE_BUILD_TYPE=Release|ANDROID_ABI=arm64-v8a|ANDROID_PLATFORM=android-28|ANDROID_STL=c++_static|ANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON|MNN_BUILD_SHARED_LIBS=ON|MNN_BUILD_FOR_ANDROID_COMMAND=ON|MNN_BUILD_LLM=ON|MNN_BUILD_LLM_OMNI=ON|MNN_LOW_MEMORY=ON|MNN_SUPPORT_TRANSFORMER_FUSE=ON|MNN_ARM82=ON|MNN_USE_LOGCAT=ON|MNN_SEP_BUILD=OFF|MNN_KLEIDIAI=OFF|MNN_BUILD_DIFFUSION=OFF|MNN_BUILD_OPENCV=ON|MNN_IMGCODECS=ON|MNN_BUILD_AUDIO=ON|MNN_OPENCL=ON|MNN_VULKAN=ON|MNN_VULKAN_IMAGE=OFF|MNN_QNN=OFF|MNN_BUILD_TEST=OFF|MNN_BUILD_BENCHMARK=OFF'
 flags_key+="|MNN_HEXAGON=${hexagon_enabled}"
 adapter_hash="$(find "${plugin_root}/android/src/main/cpp" -maxdepth 1 -type f \( -name '*.cpp' -o -name '*.hpp' -o -name 'CMakeLists.txt' \) -print0 | sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}')"
-flags_key+='|MNN_ENGINE_LOG_BRIDGE=ON|MNN_ENGINE_TOKENIZER_ADDED_TOKENS=ON'
-log_bridge_hash="$(sha256sum "${plugin_root}/scripts/cmake/mnn_log_bridge.cmake" \
+flags_key+='|MNN_ENGINE_LOG_BRIDGE=ON|MNN_ENGINE_TOKENIZER_ADDED_TOKENS=ON|MNN_ENGINE_PREFILL_CANCELLATION=ON'
+integration_hash="$(sha256sum "${plugin_root}/scripts/cmake/mnn_log_bridge.cmake" \
     "${plugin_root}/scripts/cmake/mnn_tokenizer_compat.cmake" \
+    "${plugin_root}/scripts/cmake/mnn_prefill_compat.cmake" \
+    "${plugin_root}/android/src/main/cpp/mnn_prefill_control.cpp" \
+    "${plugin_root}/android/src/main/cpp/mnn_prefill_control.hpp" \
     "${plugin_root}/android/src/main/cpp/mnn_log_bridge.cpp" \
     "${plugin_root}/android/src/main/cpp/mnn_log_bridge.hpp" | sha256sum | awk '{print $1}')"
-mnn_fingerprint="$(printf '%s\n%s\n%s\n%s\n%s\n%s\n' "${mnn_commit}" "${ndk_revision}" "${cmake_version}" "${ninja_version}" "${flags_key}" "${log_bridge_hash}" | sha256sum | cut -c1-24)"
+mnn_fingerprint="$(printf '%s\n%s\n%s\n%s\n%s\n%s\n' "${mnn_commit}" "${ndk_revision}" "${cmake_version}" "${ninja_version}" "${flags_key}" "${integration_hash}" | sha256sum | cut -c1-24)"
 fingerprint="$(printf '%s\n%s\n%s\n' "${mnn_fingerprint}" "${adapter_hash}" "${adapter_abi_version}" | sha256sum | cut -c1-24)"
 workspace_id="$(printf '%s' "${plugin_root}" | sha256sum | cut -c1-12)"
 workspace_cache="${HOME}/.cache/mnn_engine/${workspace_id}"
@@ -86,6 +89,7 @@ mkdir -p "${mnn_build_dir}" "${jni_build_dir}" "${generated_dir}"
     -DCMAKE_PROJECT_MNN_INCLUDE="${plugin_root}/scripts/cmake/mnn_log_bridge.cmake" \
     -DMNN_ENGINE_LOG_BRIDGE=ON \
     -DMNN_ENGINE_TOKENIZER_ADDED_TOKENS=ON \
+    -DMNN_ENGINE_PREFILL_CANCELLATION=ON \
     -DANDROID_ABI=arm64-v8a \
     -DANDROID_PLATFORM=android-28 \
     -DANDROID_STL=c++_static \
@@ -187,6 +191,7 @@ cat > "${staging_output}/mnn_build_info.json" <<EOF
     "MNN_USE_LOGCAT=ON",
     "MNN_ENGINE_LOG_BRIDGE=ON",
     "MNN_ENGINE_TOKENIZER_ADDED_TOKENS=ON",
+    "MNN_ENGINE_PREFILL_CANCELLATION=ON",
     "MNN_SEP_BUILD=OFF",
     "MNN_KLEIDIAI=OFF",
     "MNN_BUILD_DIFFUSION=OFF",

@@ -19,6 +19,7 @@ mkdir -p "${test_dir}"
     -I"${plugin_root}/android/src/main/cpp" \
     -I"${plugin_root}/MNN/apps/frameworks/3rd_party/include" \
     "${plugin_root}/android/src/main/cpp/mnn_llm_session_adapter.cpp" \
+    "${plugin_root}/android/src/main/cpp/mnn_prefill_control.cpp" \
     "${plugin_root}/android/src/main/cpp/mnn_native_diagnostics.cpp" \
     "${plugin_root}/test/native/mnn_llm_session_adapter_test.cpp" \
     -o "${test_dir}/mnn_llm_session_adapter_test"
