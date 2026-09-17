@@ -47,6 +47,8 @@ abstract class MnnEnginePlatform extends PlatformInterface {
     MnnLoadOptions options = const MnnLoadOptions(),
   });
   Future<void> unloadModel();
+  Future<MnnMmapCacheInfo> getMmapCache({String? modelId});
+  Future<MnnMmapCacheInfo> clearMmapCache({String? modelId});
 
   /// Performs an advisory bind probe without starting the server. It is useful
   /// for diagnostics only; callers should still handle `port_in_use` from

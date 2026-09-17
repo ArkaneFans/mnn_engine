@@ -37,6 +37,7 @@ NDK, Linux, or WSL to build.
 - Ships native libraries validated for AArch64, JNI exports, ELF dependencies,
   and Android 16 KB page compatibility.
 - Selects CPU, OpenCL or Vulkan for LLM inference, with device capability checks.
+- Configures mmap, precision, and generation thread count when loading a model, and can clear generated mmap caches.
 - Supports an experimental Hexagon backend when matching SDK-built runtime assets are packaged.
 
 ## Platform support
@@ -182,9 +183,33 @@ if (opencl.available) {
 ```
 
 The API server must be stopped before loading or changing a backend. Omitted
-options select CPU. Unavailable backends return `backend_unavailable`; the
-plugin does not silently retry on CPU. The resident model's `backend` field
-records the selection. MNN can still schedule unsupported operators on CPU.
+options select CPU, disable mmap, use low precision, and 4 generation threads.
+Unavailable backends return `backend_unavailable`; the
+plugin does not silently retry on CPU. The resident model's `backend`,
+`useMmap`, `precision`, and `threadNum` fields record the selection. MNN can
+still schedule unsupported operators on CPU.
+
+```dart
+await engine.loadModel(
+  importedModel.modelId,
+  options: const MnnLoadOptions(
+    backend: MnnBackend.cpu,
+    useMmap: true,
+    precision: MnnPrecision.high,
+    threadNum: 6,
+  ),
+);
+
+final cache = await engine.getMmapCache();
+if (cache.sizeBytes > 0) {
+  await engine.clearMmapCache();
+}
+```
+
+Clearing mmap cache requires the model to be unloaded. Pass a `modelId` to
+target one imported model, or omit it to delete every model's generated mmap
+and GPU runtime cache. The next load rebuilds the cache.
+
 A model's separate `mllm` encoder configuration is preserved; otherwise Omni
 shares the main backend. Validate vision models on the chosen accelerator.
 

@@ -77,6 +77,17 @@ class MnnEngine {
 
   Future<void> unloadModel() => MnnEnginePlatform.instance.unloadModel();
 
+  /// Reports the size of generated mmap and GPU runtime caches.
+  /// Pass [modelId] to inspect one imported model; omit it for the total.
+  Future<MnnMmapCacheInfo> getMmapCache({String? modelId}) =>
+      MnnEnginePlatform.instance.getMmapCache(modelId: modelId);
+
+  /// Deletes generated mmap and GPU runtime caches.
+  /// The model must not be loaded. Pass [modelId] to clear one imported model;
+  /// omit it to clear every model's cache.
+  Future<MnnMmapCacheInfo> clearMmapCache({String? modelId}) =>
+      MnnEnginePlatform.instance.clearMmapCache(modelId: modelId);
+
   /// Performs an advisory port probe. The authoritative result is the bind
   /// performed by [startServer], whose `port_in_use` error should be handled
   /// by callers.

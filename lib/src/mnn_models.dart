@@ -4,6 +4,8 @@ enum MnnServerBindMode { loopback, allInterfaces }
 
 enum MnnBackend { cpu, opencl, vulkan, hexagon }
 
+enum MnnPrecision { low, high }
+
 enum MnnBackendStatus {
   available,
   notBuilt,
@@ -17,11 +19,42 @@ enum MnnBackendStatus {
 /// Applies to the main language model. A model's separate `mllm` configuration
 /// continues to control its multimodal encoder, when provided.
 class MnnLoadOptions {
-  const MnnLoadOptions({this.backend = MnnBackend.cpu});
+  const MnnLoadOptions({
+    this.backend = MnnBackend.cpu,
+    this.useMmap = defaultUseMmap,
+    this.precision = defaultPrecision,
+    this.threadNum = defaultThreadNum,
+  });
+
+  static const bool defaultUseMmap = false;
+  static const MnnPrecision defaultPrecision = MnnPrecision.low;
+  static const int defaultThreadNum = 4;
+  static const int minThreadNum = 1;
+  static const int maxThreadNum = 8;
 
   final MnnBackend backend;
+  final bool useMmap;
+  final MnnPrecision precision;
+  final int threadNum;
 
-  JsonMap toMap() => {'backend': backend.name};
+  JsonMap toMap() => {
+    'backend': backend.name,
+    'useMmap': useMmap,
+    'precision': precision.name,
+    'threadNum': threadNum,
+  };
+
+  @override
+  bool operator ==(Object other) {
+    return other is MnnLoadOptions &&
+        other.backend == backend &&
+        other.useMmap == useMmap &&
+        other.precision == precision &&
+        other.threadNum == threadNum;
+  }
+
+  @override
+  int get hashCode => Object.hash(backend, useMmap, precision, threadNum);
 }
 
 /// Runtime initialization is a prerequisite, not a guarantee that every model
@@ -115,6 +148,9 @@ class MnnModelInfo {
     this.supportsToolCalling = false,
     this.loadDurationMs,
     this.backend,
+    this.useMmap,
+    this.precision,
+    this.threadNum,
     this.vendor,
     this.validationWarnings = const [],
   });
@@ -137,6 +173,11 @@ class MnnModelInfo {
       backend: map['backend'] == null
           ? null
           : MnnBackend.values.byName(map['backend'] as String),
+      useMmap: map['useMmap'] as bool?,
+      precision: map['precision'] == null
+          ? null
+          : MnnPrecision.values.byName(map['precision'] as String),
+      threadNum: (map['threadNum'] as num?)?.toInt(),
       validationWarnings:
           (map['validationWarnings'] as List?)?.whereType<String>().toList(
             growable: false,
@@ -160,6 +201,9 @@ class MnnModelInfo {
 
   /// Selected backend of a resident model; null for an unloaded model.
   final MnnBackend? backend;
+  final bool? useMmap;
+  final MnnPrecision? precision;
+  final int? threadNum;
   final List<String> validationWarnings;
 }
 
@@ -337,4 +381,25 @@ class MnnPortCheckResult {
   final bool available;
   final bool ownedByMnn;
   final String? message;
+}
+
+class MnnMmapCacheInfo {
+  const MnnMmapCacheInfo({
+    required this.sizeBytes,
+    this.cleared = false,
+    this.modelId,
+  });
+
+  factory MnnMmapCacheInfo.fromMap(Object? value) {
+    final map = _map(value);
+    return MnnMmapCacheInfo(
+      sizeBytes: (map['sizeBytes'] as num?)?.toInt() ?? 0,
+      cleared: map['cleared'] as bool? ?? false,
+      modelId: map['modelId'] as String?,
+    );
+  }
+
+  final int sizeBytes;
+  final bool cleared;
+  final String? modelId;
 }

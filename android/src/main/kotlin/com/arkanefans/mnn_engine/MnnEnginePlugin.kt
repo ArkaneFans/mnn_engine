@@ -170,6 +170,12 @@ class MnnEnginePlugin :
                     currentService.cancelGeneration()
                     result.success(null)
                 }
+                "getMmapCache" -> executeIo(result) {
+                    currentService.getMmapCache(call.argument<String>("modelId"))
+                }
+                "clearMmapCache" -> executeIo(result) {
+                    currentService.clearMmapCache(call.argument<String>("modelId"))
+                }
                 "startServer" -> executeIo(result) {
                     currentService.startServer(
                         bindMode = call.argument<String>("bindMode") ?: "loopback",

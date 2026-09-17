@@ -1,5 +1,7 @@
 ## 0.1.0 (unreleased)
 
+- Add mmap, precision, and generation thread options to `MnnLoadOptions`, and APIs to inspect or clear mmap/GPU runtime caches.
+
 - Upgrade the pinned MNN source and bundled Android libraries to 3.6.1.
 - Add CPU/OpenCL/Vulkan backend selection, capability checks and resident backend reporting.
 - Build Vulkan buffer by default; retain opt-in Hexagon host/DSP builds and deployment.

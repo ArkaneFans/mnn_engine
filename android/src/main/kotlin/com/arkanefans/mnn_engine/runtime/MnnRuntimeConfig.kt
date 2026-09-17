@@ -9,14 +9,12 @@ internal object MnnRuntimeConfig {
         options: MnnLoadOptions,
         runtimeDir: File,
         mnnVersion: String,
-        availableProcessors: Int,
     ): JsonObject {
         val root = source.deepCopy()
         root.addProperty("backend_type", options.backend.wireName)
-        root.addProperty("use_mmap", false)
-        if (!root.has("thread_num") || root.get("thread_num").asInt <= 0) {
-            root.addProperty("thread_num", availableProcessors.coerceIn(1, 8))
-        }
+        root.addProperty("use_mmap", options.useMmap)
+        root.addProperty("precision", options.precision.wireName)
+        root.addProperty("thread_num", options.threadNum)
         val tempDir = File(runtimeDir, "tmp/$mnnVersion/${options.backend.wireName}")
         check(tempDir.isDirectory || tempDir.mkdirs()) { "Failed to create model runtime directory." }
         root.addProperty("tmp_path", tempDir.absolutePath)

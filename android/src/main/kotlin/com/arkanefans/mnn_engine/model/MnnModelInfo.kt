@@ -14,6 +14,9 @@ data class MnnModelInfo(
     val supportsToolCalling: Boolean = false,
     val loadDurationMs: Long? = null,
     val backend: String? = null,
+    val useMmap: Boolean? = null,
+    val precision: String? = null,
+    val threadNum: Int? = null,
     val validationWarnings: List<String> = emptyList(),
 ) {
     fun toMap(): Map<String, Any?> = mapOf(
@@ -30,6 +33,9 @@ data class MnnModelInfo(
         "supportsToolCalling" to supportsToolCalling,
         "loadDurationMs" to loadDurationMs,
         "backend" to backend,
+        "useMmap" to useMmap,
+        "precision" to precision,
+        "threadNum" to threadNum,
         "validationWarnings" to validationWarnings,
     )
 }

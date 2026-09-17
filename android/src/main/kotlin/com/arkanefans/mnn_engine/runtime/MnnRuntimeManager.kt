@@ -40,6 +40,7 @@ class MnnRuntimeManager(
     private var nativeSession: MnnNativeSession? = null
     @Volatile
     private var activeModel: MnnModelInfo? = null
+    private var loadedOptions: MnnLoadOptions? = null
     private var baseConfigJson: String = "{}"
     private var backendCapabilitiesCache: List<Map<String, Any?>> = emptyList()
 
@@ -59,11 +60,9 @@ class MnnRuntimeManager(
             if (generating.get()) throw GenerationBusyException()
             val model = repository.find(modelId, activeModel?.modelId)
                 ?: throw IllegalArgumentException("Model not found: $modelId")
-            activeModel?.takeIf {
-                it.modelId == model.modelId && it.backend == options.backend.wireName && nativeSession != null
-            }?.let {
+            if (nativeSession != null && activeModel?.modelId == model.modelId && loadedOptions == options) {
                 logStore.debug("runtime", "Reusing loaded model ${model.modelId}")
-                return it
+                return activeModel!!
             }
             onStateChanged("loading", "idle", activeModel, null)
             var nativeStartedAt: Long? = null
@@ -71,6 +70,7 @@ class MnnRuntimeManager(
                 nativeSession?.close()
                 nativeSession = null
                 activeModel = null
+                loadedOptions = null
                 val capability = backendCapabilities().first { it["backend"] == options.backend.wireName }
                 if (capability["available"] != true) {
                     throw MnnEngineOperationException(
@@ -88,8 +88,19 @@ class MnnRuntimeManager(
                 val loadDurationMs = SystemClock.elapsedRealtime() - loadStartedAt
                 baseConfigJson = runtimeConfig.toString()
                 nativeSession = session
-                activeModel = model.copy(isActive = true, loadDurationMs = loadDurationMs, backend = options.backend.wireName)
-                logStore.info("mnn", "Loaded model ${model.modelId}, backend=${options.backend.wireName}, in ${loadDurationMs}ms")
+                loadedOptions = options
+                activeModel = model.copy(
+                    isActive = true,
+                    loadDurationMs = loadDurationMs,
+                    backend = options.backend.wireName,
+                    useMmap = options.useMmap,
+                    precision = options.precision.wireName,
+                    threadNum = options.threadNum,
+                )
+                logStore.info(
+                    "mnn",
+                    "Loaded model ${model.modelId}, backend=${options.backend.wireName}, mmap=${options.useMmap}, precision=${options.precision.wireName}, threads=${options.threadNum}, in ${loadDurationMs}ms",
+                )
                 onStateChanged("loaded", "idle", activeModel, null)
                 return activeModel!!
             } catch (error: Throwable) {
@@ -97,6 +108,7 @@ class MnnRuntimeManager(
                 nativeSession?.close()
                 nativeSession = null
                 activeModel = null
+                loadedOptions = null
                 onStateChanged("error", "idle", null, error.message)
                 throw error
             }
@@ -111,6 +123,7 @@ class MnnRuntimeManager(
             nativeSession?.close()
             nativeSession = null
             activeModel = null
+            loadedOptions = null
             baseConfigJson = "{}"
             logStore.info("runtime", "Model unloaded")
             onStateChanged("unloaded", "idle", null, null)
@@ -187,6 +200,7 @@ class MnnRuntimeManager(
                 // the resident model too so host caches request a real reload.
                 nativeSession = null
                 activeModel = null
+                loadedOptions = null
                 baseConfigJson = "{}"
                 runCatching { session.close() }.onFailure { error.addSuppressed(it) }
             }
@@ -223,6 +237,7 @@ class MnnRuntimeManager(
             nativeSession?.close()
             nativeSession = null
             activeModel = null
+            loadedOptions = null
         }
     }
 
@@ -233,7 +248,6 @@ class MnnRuntimeManager(
             options = options,
             runtimeDir = directories.modelRuntimeDir(model.modelKey),
             mnnVersion = MnnNativeBridge.version().substringBefore(" ("),
-            availableProcessors = Runtime.getRuntime().availableProcessors(),
         )
     }
 
