@@ -137,6 +137,18 @@ class MethodChannelMnnEngine extends MnnEnginePlatform {
   Future<void> unloadModel() => _invokeVoid('unloadModel');
 
   @override
+  Future<MnnMmapCacheInfo> getMmapCache({String? modelId}) async =>
+      MnnMmapCacheInfo.fromMap(
+        await _invoke<Object?>('getMmapCache', {'modelId': modelId}),
+      );
+
+  @override
+  Future<MnnMmapCacheInfo> clearMmapCache({String? modelId}) async =>
+      MnnMmapCacheInfo.fromMap(
+        await _invoke<Object?>('clearMmapCache', {'modelId': modelId}),
+      );
+
+  @override
   Future<MnnPortCheckResult> checkPort({
     required MnnServerBindMode bindMode,
     required int port,

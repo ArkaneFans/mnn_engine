@@ -17,6 +17,7 @@ import com.arkanefans.mnn_engine.model.MnnModelValidator
 import com.arkanefans.mnn_engine.model.MnnTestModelRepository
 import com.arkanefans.mnn_engine.runtime.MnnNativeBridge
 import com.arkanefans.mnn_engine.runtime.MnnLoadOptions
+import com.arkanefans.mnn_engine.runtime.MnnRuntimeCache
 import com.arkanefans.mnn_engine.runtime.MnnRuntimeManager
 import com.arkanefans.mnn_engine.runtime.RuntimeSnapshot
 import com.arkanefans.mnn_engine.server.MnnOpenAiServer
@@ -300,6 +301,53 @@ class MnnEngineService : Service() {
 
     fun cancelGeneration() {
         runtimeManager.cancelGeneration()
+    }
+
+    fun getMmapCache(modelId: String?): Map<String, Any?> {
+        directories.ensureCreated()
+        return mmapCachePayload(modelId, cleared = false)
+    }
+
+    fun clearMmapCache(modelId: String?): Map<String, Any?> {
+        val active = runtimeManager.activeModel()
+        if (active != null && (modelId == null || active.modelId == modelId)) {
+            throw MnnEngineOperationException(
+                "model_active",
+                "Unload the model before clearing its mmap cache.",
+            )
+        }
+        directories.ensureCreated()
+        val modelKey = resolveRuntimeCacheKey(modelId)
+        val sizeBytes = MnnRuntimeCache.clear(directories.runtimeDir, modelKey)
+        logStore.info(
+            TAG,
+            if (modelId == null) {
+                "Cleared MNN mmap cache, bytes=$sizeBytes"
+            } else {
+                "Cleared MNN mmap cache for $modelId, bytes=$sizeBytes"
+            },
+        )
+        return mapOf(
+            "sizeBytes" to sizeBytes,
+            "cleared" to true,
+            "modelId" to modelId,
+        )
+    }
+
+    private fun mmapCachePayload(modelId: String?, cleared: Boolean): Map<String, Any?> {
+        val modelKey = resolveRuntimeCacheKey(modelId)
+        return mapOf(
+            "sizeBytes" to MnnRuntimeCache.sizeBytes(directories.runtimeDir, modelKey),
+            "cleared" to cleared,
+            "modelId" to modelId,
+        )
+    }
+
+    private fun resolveRuntimeCacheKey(modelId: String?): String? {
+        if (modelId == null) return null
+        val model = repository.find(modelId, runtimeManager.activeModel()?.modelId)
+            ?: throw MnnEngineOperationException("model_not_found", "Model not found: $modelId")
+        return model.modelKey
     }
 
     fun startServer(bindMode: String, port: Int, apiKey: String?): Map<String, Any?> {

@@ -6,7 +6,8 @@ import 'package:mnn_engine/mnn_engine.dart'
         MnnServerBindMode,
         MnnBackend,
         MnnBackendStatus,
-        MnnLoadOptions;
+        MnnLoadOptions,
+        MnnPrecision;
 import 'package:mnn_engine/mnn_engine_method_channel.dart';
 
 void main() {
@@ -101,7 +102,12 @@ void main() {
           expect(call.method, 'loadModel');
           expect(call.arguments, <String, Object?>{
             'modelId': 'qwen',
-            'options': {'backend': 'cpu'},
+            'options': {
+              'backend': 'cpu',
+              'useMmap': false,
+              'precision': 'low',
+              'threadNum': 4,
+            },
           });
           return <String, Object?>{
             'modelId': 'qwen',
@@ -130,7 +136,12 @@ void main() {
               expect(call.method, 'loadModel');
               expect(call.arguments, {
                 'modelId': 'qwen',
-                'options': {'backend': backend.name},
+                'options': {
+                  'backend': backend.name,
+                  'useMmap': false,
+                  'precision': 'low',
+                  'threadNum': 4,
+                },
               });
               return {
                 'modelId': 'qwen',
@@ -323,6 +334,75 @@ void main() {
 
     expect(result.model.modelId, 'Qwen (2)');
   });
+
+  test('forwards mmap, precision and thread options', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          expect(call.method, 'loadModel');
+          expect(call.arguments, <String, Object?>{
+            'modelId': 'qwen',
+            'options': {
+              'backend': 'cpu',
+              'useMmap': true,
+              'precision': 'high',
+              'threadNum': 6,
+            },
+          });
+          return <String, Object?>{
+            'modelId': 'qwen',
+            'backend': 'cpu',
+            'useMmap': true,
+            'precision': 'high',
+            'threadNum': 6,
+            'isActive': true,
+          };
+        });
+
+    final model = await platform.loadModel(
+      'qwen',
+      options: const MnnLoadOptions(
+        useMmap: true,
+        precision: MnnPrecision.high,
+        threadNum: 6,
+      ),
+    );
+    expect(model.useMmap, isTrue);
+    expect(model.precision, MnnPrecision.high);
+    expect(model.threadNum, 6);
+  });
+
+  test(
+    'getMmapCache and clearMmapCache forward an optional model id',
+    () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            expect(call.method, 'getMmapCache');
+            expect(call.arguments, <String, Object?>{'modelId': 'qwen'});
+            return <String, Object?>{
+              'sizeBytes': 2048,
+              'cleared': false,
+              'modelId': 'qwen',
+            };
+          });
+      final info = await platform.getMmapCache(modelId: 'qwen');
+      expect(info.sizeBytes, 2048);
+      expect(info.cleared, isFalse);
+
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            expect(call.method, 'clearMmapCache');
+            expect(call.arguments, <String, Object?>{'modelId': null});
+            return <String, Object?>{
+              'sizeBytes': 2048,
+              'cleared': true,
+              'modelId': null,
+            };
+          });
+      final cleared = await platform.clearMmapCache();
+      expect(cleared.cleared, isTrue);
+      expect(cleared.sizeBytes, 2048);
+    },
+  );
 
   test('renameImportedModel forwards the current id and new name', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

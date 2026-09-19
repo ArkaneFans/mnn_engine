@@ -30,6 +30,7 @@
 - 支持 SSE 流式响应、视觉输入、function tools、推理内容和取消当前生成。
 - Native 库经过 AArch64、JNI exports、ELF 依赖和 Android 16 KB page 校验。
 - 支持 CPU、OpenCL、Vulkan 推理后端选择和设备可用性检测。
+- 加载模型时可配置 mmap、Precision 和生成线程数，并支持清理 mmap 缓存。
 - 支持实验性 Hexagon 接入，需额外打包与 MNN 匹配的 SDK 运行库。
 
 ## 支持范围
@@ -168,10 +169,31 @@ if (opencl.available) {
 }
 ```
 
-加载或切换后端前必须停止 API 服务。不传选项时使用 CPU；后端不可用时返回
-`backend_unavailable`，不会静默重试 CPU。活动模型的 `backend` 字段记录加载选择，
-不代表全部算子都在加速器上执行。模型独立的 `mllm` 编码器配置会保留，未配置时
-Omni 共享主后端，因此视觉模型也需要在所选后端上单独验收。
+加载或切换后端前必须停止 API 服务。不传选项时使用 CPU、关闭 mmap、低 Precision、
+4 个生成线程。后端不可用时返回 `backend_unavailable`，不会静默重试 CPU。活动模型的
+`backend`、`useMmap`、`precision`、`threadNum` 字段记录加载选择，不代表全部算子
+都在加速器上执行。模型独立的 `mllm` 编码器配置会保留，未配置时 Omni 共享主后端，
+因此视觉模型也需要在所选后端上单独验收。
+
+```dart
+await engine.loadModel(
+  importedModel.modelId,
+  options: const MnnLoadOptions(
+    backend: MnnBackend.cpu,
+    useMmap: true,
+    precision: MnnPrecision.high,
+    threadNum: 6,
+  ),
+);
+
+final cache = await engine.getMmapCache();
+if (cache.sizeBytes > 0) {
+  await engine.clearMmapCache();
+}
+```
+
+清理 mmap 缓存前必须卸载模型。传入 `modelId` 只清理该模型，省略则清理全部模型的
+mmap 与 GPU 运行时缓存。下次加载会重新生成。
 
 默认包仅包含 CPU/OpenCL/Vulkan，Hexagon 为实验性。显式开启的实验构建
 可在同一 APK 中包含 **v73、v75、v79、v81** 四套 Hexagon DSP 运行库。插件查询
