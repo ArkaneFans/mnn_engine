@@ -7,38 +7,30 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 Run [Alibaba MNN](https://github.com/alibaba/MNN) large language models on
-Android from Flutter, then expose the active model through an on-device
+Android from Flutter, and expose the active model as an on-device
 OpenAI-compatible HTTP API.
 
-`mnn_engine` bundles verified `arm64-v8a` native libraries. Applications that
-depend on the pub.dev package do not need MNN source code, CMake, the Android
-NDK, Linux, or WSL to build.
+The pub.dev package already includes verified `arm64-v8a` native libraries.
+Host apps do not need MNN source, CMake, the Android NDK, Linux, or WSL.
 
 > [!IMPORTANT]
-> This is an independent community plugin and is not an official Alibaba MNN
-> Flutter package. The public API is still evolving under the `0.x` version
-> series.
+> This is an independent community plugin, not an official Alibaba MNN
+> Flutter package. The public API is still evolving in the `0.x` series.
 
 ## Features
 
-- Imports complete MNN model directories through Android Storage Access
-  Framework or from app-owned private storage.
-- Validates `config.json` and all referenced model, weight, embedding, and
+- Import, list, load, unload, rename, and delete complete MNN model
+  directories. The directory name is the runtime and API model ID.
+- Validate `config.json` and referenced model, weight, embedding, and
   tokenizer files before activation.
-- Loads, unloads, lists, renames, and deletes imported models. Each model
-  directory name is also its runtime and API model ID.
-- Keeps model and server state in an Android foreground service.
-- Provides runtime snapshots, state events, log snapshots, and live log events.
-- Runs a Ktor CIO server on loopback or all available IPv4 interfaces.
-- Supports optional Bearer authentication in both bind modes.
-- Implements OpenAI-compatible `/v1/models` and `/v1/chat/completions` APIs.
-- Supports streaming SSE responses, vision input, function tools, reasoning
-  content, and cancellation of the active generation.
-- Ships native libraries validated for AArch64, JNI exports, ELF dependencies,
-  and Android 16 KB page compatibility.
-- Selects CPU, OpenCL or Vulkan for LLM inference, with device capability checks.
-- Configures mmap, precision, and generation thread count when loading a model, and can clear generated mmap caches.
-- Supports an experimental Hexagon backend when matching SDK-built runtime assets are packaged.
+- Keep model and server state in an Android foreground service, with
+  snapshots, state events, and log streams.
+- Serve OpenAI-compatible `/v1/models` and `/v1/chat/completions` on
+  loopback or all IPv4 interfaces, with optional Bearer authentication,
+  SSE streaming, vision input, function tools, reasoning content, and
+  cancelling the current generation.
+- Configure backend, mmap, precision, and generation threads when loading
+  a model, and inspect or clear mmap/GPU caches.
 
 ## Platform support
 
@@ -101,10 +93,9 @@ android {
 }
 ```
 
-The plugin manifest contributes Internet, foreground service, data-sync
+The plugin manifest merges Internet, foreground service, data-sync
 foreground service, and notification permissions. On Android 13 and newer,
-the host application should request notification permission as part of its own
-UI flow.
+the host application should request notification permission in its own UI.
 
 ## Quick start
 
@@ -165,64 +156,57 @@ downloaded a model into private storage, use:
 final imported = await engine.importModelFromPath(modelDirectory.path);
 ```
 
-## Choosing an inference backend
+## Load options
 
-Query capabilities before offering an accelerator. `compiled` means that its
-MNN host backend is included; `available` means that runtime initialization
-passed on this device. Neither guarantees compatibility with every model.
+`loadModel()` accepts `MnnLoadOptions`. Omitted fields use the defaults below.
+
+| Field | Default | Values |
+| --- | --- | --- |
+| `backend` | `cpu` | `cpu`, `opencl`, `vulkan`; `hexagon` is experimental |
+| `useMmap` | `false` | `true`, `false` |
+| `precision` | `low` | `low`, `high` |
+| `threadNum` | `4` | `1` to `8` |
+
+Call `getBackendCapabilities()` before offering a GPU backend. `compiled`
+means the backend is included in this build; `available` means it initialized
+on this device. Stop the API server before loading or switching a model.
+Unavailable backends return `backend_unavailable`; the plugin does not fall
+back to CPU. The loaded model's `backend`, `useMmap`, `precision`, and
+`threadNum` fields record the selection.
 
 ```dart
 final capabilities = await engine.getBackendCapabilities();
-final opencl = capabilities.firstWhere((item) => item.backend == MnnBackend.opencl);
-if (opencl.available) {
-  await engine.loadModel(
-    importedModel.modelId,
-    options: const MnnLoadOptions(backend: MnnBackend.opencl),
-  );
+final opencl = capabilities.firstWhere(
+  (item) => item.backend == MnnBackend.opencl,
+);
+if (!opencl.available) {
+  throw StateError('OpenCL is not available on this device.');
 }
-```
 
-The API server must be stopped before loading or changing a backend. Omitted
-options select CPU, disable mmap, use low precision, and 4 generation threads.
-Unavailable backends return `backend_unavailable`; the
-plugin does not silently retry on CPU. The resident model's `backend`,
-`useMmap`, `precision`, and `threadNum` fields record the selection. MNN can
-still schedule unsupported operators on CPU.
-
-```dart
 await engine.loadModel(
   importedModel.modelId,
   options: const MnnLoadOptions(
-    backend: MnnBackend.cpu,
+    backend: MnnBackend.opencl,
     useMmap: true,
     precision: MnnPrecision.high,
     threadNum: 6,
   ),
 );
+```
 
+`getMmapCache()` and `clearMmapCache()` report or delete generated mmap and
+GPU runtime caches. Unload the model before clearing. Pass `modelId` for one
+imported model, or omit it for all models. The next load rebuilds the cache.
+
+```dart
 final cache = await engine.getMmapCache();
 if (cache.sizeBytes > 0) {
   await engine.clearMmapCache();
 }
 ```
 
-Clearing mmap cache requires the model to be unloaded. Pass a `modelId` to
-target one imported model, or omit it to delete every model's generated mmap
-and GPU runtime cache. The next load rebuilds the cache.
-
-A model's separate `mllm` encoder configuration is preserved; otherwise Omni
-shares the main backend. Validate vision models on the chosen accelerator.
-
-Default packages contain CPU/OpenCL/Vulkan only; Hexagon is Experimental.
-Explicit experimental builds can bundle **v73, v75, v79 and v81** in one APK. The
-plugin queries the device's cDSP architecture and extracts/loads only the exact
-match; `MnnBackendCapability.dspArchitecture` reports the detected ISA. No manual
-architecture selection is needed. A compatible Qualcomm DSP with FP16 HMX and
-OEM FastRPC access is still required. Builds with `include_hexagon=false` disable
-the host backend and omit the stub/DSP assets. See
+`hexagon` is experimental and requires a matching native build. See
 [native build instructions](doc/BUILDING_NATIVE.md).
-For Hexagon, the host app must set `packaging.jniLibs.useLegacyPackaging = true`
-so the Android stub exists in `nativeLibraryDir`.
 
 ## Model directory
 
@@ -285,25 +269,18 @@ Always configure an API key unless the device is on a trusted network.
 ## Runtime rules
 
 - A model must be loaded before the server starts.
-- Stop the server before explicitly unloading, deleting, or replacing the
-  active model.
+- Stop the server before unloading, deleting, or replacing the active model.
 - A second concurrent generation receives HTTP 429; requests are not queued.
-- `stopServer()` closes generation admission before cancelling the active
-  request. While the HTTP listener is shutting down, new requests receive
-  HTTP 503 (`server_stopping`); requests still preparing input cannot start inference.
-- `cancelGeneration()` cancels only the active generation; it does not stop the
-  server. Standard causal models check prefill cancellation between chunks
-  (128 tokens by default). Explicit `chunk`/`chunk_limits` are preserved;
-  `chunk: 0` disables splitting, and legacy GLM/integer masks keep full prefill
-  by default. A running chunk or image/audio encoder call must finish before
-  cancellation takes effect.
-- A generation failure releases the resident model and clears `activeModel` in
-  runtime snapshots. Recover with `stopServer()`, `loadModel()`, then
-  `startServer()`. Normal completion, length limits, and cancellation keep the
-  model available for subsequent requests.
+- `stopServer()` rejects new requests with HTTP 503 (`server_stopping`) and
+  cancels the active generation.
+- `cancelGeneration()` cancels only the active generation; it does not stop
+  the server.
+- A generation failure unloads the model and clears `activeModel`. Recover
+  with `stopServer()`, `loadModel()`, then `startServer()`. Normal completion,
+  length limits, and cancellation keep the model loaded.
 - Complete shutdown order is `stopServer()` followed by `unloadModel()`.
 
-## Native binaries and reproducibility
+## Native binaries
 
 The pub package contains:
 
@@ -313,18 +290,10 @@ android/src/main/jniLibs/arm64-v8a/
 └── libmnn_engine_jni.so
 ```
 
-Their exact source revision, toolchain, build flags, Build IDs, sizes, and
-SHA-256 hashes are recorded in
-[`native/android-arm64-v8a.json`](native/android-arm64-v8a.json). Maintainers
-can reproduce them locally or with the repository's GitHub Actions workflow;
-consumer builds never invoke that toolchain.
-
-Run **Build Android native libraries** in Actions to download the `.so` files,
-checksums and build logs. The default `include_hexagon=false` builds CPU/GPU only,
-including on `native-v*` tags. Explicit opt-in builds all four DSP runtimes with
-the pinned SDK Docker image; no SDK secret is required. A supplied SDK archive
-is also supported. Example APK verification is optional. See the
-[GitHub Actions instructions](doc/BUILDING_NATIVE.md#recommended-github-actions).
+Source revision, toolchain, build flags, and SHA-256 hashes are recorded in
+[`native/android-arm64-v8a.json`](native/android-arm64-v8a.json). Consumer
+builds never compile native code. Maintainers can rebuild locally or with
+GitHub Actions; see [native build instructions](doc/BUILDING_NATIVE.md).
 
 ## Additional resources
 

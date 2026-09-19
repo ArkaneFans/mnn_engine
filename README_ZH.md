@@ -7,31 +7,27 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 在 Flutter Android 应用中运行 [Alibaba MNN](https://github.com/alibaba/MNN)
-大语言模型，并将当前模型暴露为设备内 OpenAI 兼容 HTTP API。
+大语言模型，并把当前模型暴露为设备内 OpenAI 兼容 HTTP API。
 
-`mnn_engine` 已随 pub.dev 包提供经过校验的 `arm64-v8a` Native 库。应用接入后
-无需准备 MNN 源码、CMake、Android NDK、Linux 或 WSL，即可直接完成 Android 构建。
+pub.dev 包已包含经过校验的 `arm64-v8a` Native 库。接入后无需准备 MNN 源码、
+CMake、Android NDK、Linux 或 WSL。
 
 > [!IMPORTANT]
 > 本项目是独立维护的社区插件，不是 Alibaba 官方 Flutter 插件。当前仍处于
-> `0.x` 版本阶段，公共 API 后续可能继续演进。
+> `0.x` 阶段，公共 API 后续可能继续演进。
 
 ## 功能特性
 
-- 通过 Android Storage Access Framework 导入完整 MNN 模型目录。
-- 支持从宿主应用私有存储直接导入已经下载完成的模型。
+- 导入、列出、加载、卸载、重命名和删除完整 MNN 模型目录；目录名同时作为
+  运行时和 API 模型 ID。
 - 加载前校验 `config.json` 以及模型、权重、embedding、tokenizer 等引用文件。
-- 支持模型导入、列表、加载、卸载、重命名和删除；模型目录名同时作为运行时及 API 模型 ID。
-- 使用 Android 前台 Service 管理模型 Session 与 API Server 生命周期。
-- 提供运行状态快照、状态事件流、日志快照和实时日志流。
-- 可监听 loopback 或全部可用 IPv4 网络接口。
-- 两种监听模式均支持可选 Bearer API Key。
-- 提供 OpenAI 兼容的 `/v1/models` 和 `/v1/chat/completions`。
-- 支持 SSE 流式响应、视觉输入、function tools、推理内容和取消当前生成。
-- Native 库经过 AArch64、JNI exports、ELF 依赖和 Android 16 KB page 校验。
-- 支持 CPU、OpenCL、Vulkan 推理后端选择和设备可用性检测。
-- 加载模型时可配置 mmap、Precision 和生成线程数，并支持清理 mmap 缓存。
-- 支持实验性 Hexagon 接入，需额外打包与 MNN 匹配的 SDK 运行库。
+- 使用 Android 前台 Service 管理模型与 API Server，并提供运行快照、状态事件
+  和日志流。
+- 提供 OpenAI 兼容的 `/v1/models` 和 `/v1/chat/completions`，可监听 loopback
+  或全部 IPv4 接口，支持可选 Bearer 认证、SSE 流式响应、视觉输入、
+  function tools、推理内容和取消生成。
+- 加载模型时可配置推理后端、mmap、计算精度和生成线程数，并查询或清理
+  mmap/GPU 缓存。
 
 ## 支持范围
 
@@ -94,7 +90,7 @@ android {
 ```
 
 插件 Manifest 会合并 Internet、前台 Service、data sync 前台 Service 和通知权限。
-Android 13 及以上的通知运行时授权，应由宿主应用按照自己的交互流程申请。
+Android 13 及以上的通知运行时授权，应由宿主应用按自己的交互流程申请。
 
 ## 快速开始
 
@@ -146,63 +142,62 @@ await eventSubscription.cancel();
 await logSubscription.cancel();
 ```
 
-`importModelDirectory()` 会启动 Android Activity，因此必须在插件已附加 Flutter
-Activity 时调用。如果宿主应用已经把模型下载到私有目录，可以直接使用：
+`importModelDirectory()` 会拉起 Android Activity，因此必须在插件已附着
+Flutter Activity 时调用。如果宿主应用已经把模型下载到私有目录，可以直接使用：
 
 ```dart
 final imported = await engine.importModelFromPath(modelDirectory.path);
 ```
 
-## 选择推理后端
+## 加载配置
 
-先查询设备能力，再开放对应选项。`compiled` 表示 MNN host backend 已编入，
-`available` 表示运行时初始化通过；两者均不能保证任意模型都兼容。
+`loadModel()` 接受 `MnnLoadOptions`。未传入的字段使用下表默认值。
+
+| 字段 | 默认值 | 可选值 |
+| --- | --- | --- |
+| `backend` | `cpu` | `cpu`、`opencl`、`vulkan`；`hexagon` 为实验性 |
+| `useMmap` | `false` | `true`、`false` |
+| `precision` | `low` | `low`、`high` |
+| `threadNum` | `4` | `1` 到 `8` |
+
+提供 GPU 后端前先调用 `getBackendCapabilities()`。`compiled` 表示当前构建
+包含该后端，`available` 表示本机初始化成功。加载或切换模型前必须先停止
+API Server。后端不可用时返回 `backend_unavailable`，不会回退到 CPU。
+已加载模型的 `backend`、`useMmap`、`precision`、`threadNum` 会记录本次选择。
 
 ```dart
 final capabilities = await engine.getBackendCapabilities();
-final opencl = capabilities.firstWhere((item) => item.backend == MnnBackend.opencl);
-if (opencl.available) {
-  await engine.loadModel(
-    importedModel.modelId,
-    options: const MnnLoadOptions(backend: MnnBackend.opencl),
-  );
+final opencl = capabilities.firstWhere(
+  (item) => item.backend == MnnBackend.opencl,
+);
+if (!opencl.available) {
+  throw StateError('当前设备无法使用 OpenCL。');
 }
-```
 
-加载或切换后端前必须停止 API 服务。不传选项时使用 CPU、关闭 mmap、低 Precision、
-4 个生成线程。后端不可用时返回 `backend_unavailable`，不会静默重试 CPU。活动模型的
-`backend`、`useMmap`、`precision`、`threadNum` 字段记录加载选择，不代表全部算子
-都在加速器上执行。模型独立的 `mllm` 编码器配置会保留，未配置时 Omni 共享主后端，
-因此视觉模型也需要在所选后端上单独验收。
-
-```dart
 await engine.loadModel(
   importedModel.modelId,
   options: const MnnLoadOptions(
-    backend: MnnBackend.cpu,
+    backend: MnnBackend.opencl,
     useMmap: true,
     precision: MnnPrecision.high,
     threadNum: 6,
   ),
 );
+```
 
+`getMmapCache()` 和 `clearMmapCache()` 用于查看或删除已生成的 mmap 与 GPU
+运行时缓存。清理前必须卸载模型。传入 `modelId` 只处理单个已导入模型，
+省略则统计或清理全部模型。下次加载会重新生成缓存。
+
+```dart
 final cache = await engine.getMmapCache();
 if (cache.sizeBytes > 0) {
   await engine.clearMmapCache();
 }
 ```
 
-清理 mmap 缓存前必须卸载模型。传入 `modelId` 只清理该模型，省略则清理全部模型的
-mmap 与 GPU 运行时缓存。下次加载会重新生成。
-
-默认包仅包含 CPU/OpenCL/Vulkan，Hexagon 为实验性。显式开启的实验构建
-可在同一 APK 中包含 **v73、v75、v79、v81** 四套 Hexagon DSP 运行库。插件查询
-真实 cDSP 架构，只解包和加载精确匹配的一套，无需手工选择架构；能力项的
-`dspArchitecture` 返回识别结果。仍需支持 FP16 HMX 的高通 DSP 和 OEM FastRPC
-访问能力。使用 `include_hexagon=false` 构建的通用包关闭主机后端，也不包含 stub/DSP 资源。
-具体操作见 [Native 构建说明](doc/BUILDING_NATIVE_ZH.md) 与
-[后端设计文档](doc/ANDROID_BACKENDS_DESIGN_ZH.md)。启用 Hexagon 的宿主应用必须设置
-`packaging.jniLibs.useLegacyPackaging = true`，确保 stub 存在于 `nativeLibraryDir`。
+`hexagon` 为实验性后端，需要匹配的 Native 构建，详见
+[Native 编译指南](doc/BUILDING_NATIVE_ZH.md)。
 
 ## 模型目录
 
@@ -261,22 +256,18 @@ Wi-Fi、热点、VPN 等 IPv4 接口访问。除非设备处于可信网络，�
 ## 运行约束
 
 - 启动 Server 前必须先加载模型。
-- 主动卸载、删除或替换活跃模型前，必须先停止 Server。
+- 卸载、删除或替换活跃模型前，必须先停止 Server。
 - 第二个并发生成请求会收到 HTTP 429，不排队。
-- `stopServer()` 先关闭生成入口，再取消活跃请求。HTTP 监听关闭过程中，
-  新请求返回 HTTP 503（`server_stopping`）；尚在准备输入的请求也不会启动推理。
-- `cancelGeneration()` 只取消当前生成，不会停止 Server。标准因果模型的 prefill
-  在分段边界检查取消，默认每段 128 token；保留模型指定的 `chunk` 和 `chunk_limits`，
-  `chunk: 0` 可禁用分段，旧式 GLM/整数 mask 模型默认保留整段 prefill。
-  正在执行的单段计算或图像/音频编码器调用仍需完成后才能响应取消。
-- 生成异常会释放当前模型，并将运行快照中的 `activeModel` 清空。依次调用
-  `stopServer()`、`loadModel()`、`startServer()` 即可重新加载；正常完成、
-  达到长度上限及取消生成仍保留模型，后续请求可继续使用。
-- 完整停止顺序为 `stopServer()`，然后调用 `unloadModel()`。
+- `stopServer()` 会拒绝新请求（HTTP 503，`server_stopping`），并取消当前生成。
+- `cancelGeneration()` 只取消当前生成，不会停止 Server。
+- 生成异常会卸载当前模型，并清空运行快照中的 `activeModel`。依次调用
+  `stopServer()`、`loadModel()`、`startServer()` 即可恢复。正常完成、达到
+  长度上限以及取消生成仍会保留模型，后续请求可继续使用。
+- 完整停止顺序为先 `stopServer()`，再 `unloadModel()`。
 
-## Native 产物与可复现构建
+## Native 产物
 
-pub.dev 包内直接包含：
+pub 包内包含：
 
 ```text
 android/src/main/jniLibs/arm64-v8a/
@@ -284,15 +275,10 @@ android/src/main/jniLibs/arm64-v8a/
 └── libmnn_engine_jni.so
 ```
 
-其源码版本、工具链、构建参数、Build ID、文件大小和 SHA-256 均记录在
-[`native/android-arm64-v8a.json`](native/android-arm64-v8a.json) 中。维护者可以
-在本地或 GitHub Actions 中重新生成这些文件，普通消费者的 Gradle 构建不会触发
-Native 编译。
-
-在 Actions 中运行 **Build Android native libraries** 可直接下载 `.so`、校验清单和
-构建日志；默认 `include_hexagon=false`，包括 `native-v*` 标签构建，均只编译 CPU/GPU。
-显式开启后使用自带 SDK 的固定 Docker 镜像编译四套 DSP 运行库，无需 SDK secret；也支持自行提供 SDK 压缩包。
-example APK 验证可单独开启。操作步骤见 [GitHub Actions 构建说明](doc/BUILDING_NATIVE_ZH.md#推荐使用-github-actions)。
+源码版本、工具链、构建参数和 SHA-256 记录在
+[`native/android-arm64-v8a.json`](native/android-arm64-v8a.json)。
+普通应用构建不会编译 Native 代码。维护者可通过 GitHub Actions 或本地环境
+重新生成，步骤见 [Native 编译指南](doc/BUILDING_NATIVE_ZH.md)。
 
 ## 其他资源
 
