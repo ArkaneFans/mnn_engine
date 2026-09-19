@@ -1,6 +1,8 @@
-## 0.1.0 (unreleased)
+## 0.1.1
 
 - Add mmap, precision, and generation thread options to `MnnLoadOptions`, and APIs to inspect or clear mmap/GPU runtime caches.
+
+## 0.1.0
 
 - Upgrade the pinned MNN source and bundled Android libraries to 3.6.1.
 - Add CPU/OpenCL/Vulkan backend selection, capability checks and resident backend reporting.

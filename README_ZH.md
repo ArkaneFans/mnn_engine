@@ -55,7 +55,7 @@
 
 ```yaml
 dependencies:
-  mnn_engine: ^0.1.0
+  mnn_engine: ^0.1.1
 ```
 
 然后执行：
