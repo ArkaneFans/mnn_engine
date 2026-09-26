@@ -213,6 +213,7 @@ class MnnRuntimeManagerTest {
             // Exercise the real manager's generation and recovery paths below.
             setResidentField(it, "nativeSession", session)
             setResidentField(it, "activeModel", model)
+            setResidentField(it, "loadedOptions", MnnLoadOptions())
         }
 
         fun generate(canGenerate: () -> Boolean = { true }) = manager.generate(

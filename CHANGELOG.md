@@ -1,3 +1,11 @@
+## 0.2.0-dev.1
+
+- Add request-scoped cancellation for HTTP requests carrying X-ServLlama-Request-Id.
+- Add isRequestActive to distinguish cancellation acknowledgement from native completion.
+- Preserve server admission until native generation returns; cancelled pre-admission IDs cannot run later.
+- Use the special-use foreground type for user-started local inference on Android 14+.
+- Native MNN ABI and pinned source revision remain unchanged. Device cancellation/prefill validation is pending.
+
 ## 0.1.1
 
 - Add mmap, precision, and generation thread options to `MnnLoadOptions`, and APIs to inspect or clear mmap/GPU runtime caches.

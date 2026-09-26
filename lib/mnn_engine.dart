@@ -108,6 +108,14 @@ class MnnEngine {
 
   Future<void> stopServer() => MnnEnginePlatform.instance.stopServer();
 
+  /// Cancels only the HTTP request carrying X-ServLlama-Request-Id.
+  /// true acknowledges a matching request, not native completion.
+  /// Poll [isRequestActive] before considering native work drained.
+  Future<bool> cancelRequest(String requestId) =>
+      MnnEnginePlatform.instance.cancelRequest(requestId);
+  Future<bool> isRequestActive(String requestId) =>
+      MnnEnginePlatform.instance.isRequestActive(requestId);
+
   Future<void> cancelGeneration() =>
       MnnEnginePlatform.instance.cancelGeneration();
 
