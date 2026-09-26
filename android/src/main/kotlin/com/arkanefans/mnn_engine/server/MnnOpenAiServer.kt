@@ -118,7 +118,17 @@ class MnnOpenAiServer(
                         respondOpenAiError(HttpStatusCode.BadRequest, "model_vision_not_supported", "The loaded model does not provide a visual model.")
                         return@post
                     }
-                    when (gate.acquire()) {
+                    val requestId = call.request.headers["X-ServLlama-Request-Id"]
+                        ?: UUID.randomUUID().toString()
+                    if (!requestId.matches(Regex("[a-zA-Z0-9._:-]{1,128}"))) {
+                        respondOpenAiError(HttpStatusCode.BadRequest, "invalid_request_id", "Invalid request ID.")
+                        return@post
+                    }
+                    when (gate.acquire(requestId)) {
+                        MnnRequestGate.Admission.CANCELLED -> {
+                            respondOpenAiError(HttpStatusCode.Conflict, "request_cancelled", "Request was cancelled.")
+                            return@post
+                        }
                         MnnRequestGate.Admission.STOPPING -> {
                             respondServerStopping()
                             return@post
@@ -129,7 +139,6 @@ class MnnOpenAiServer(
                         }
                         MnnRequestGate.Admission.ACCEPTED -> Unit
                     }
-                    val requestId = UUID.randomUUID().toString()
                     val requestStartedAt = SystemClock.elapsedRealtime()
                     logStore.debug(TAG, "$requestId POST /v1/chat/completions started")
                     try {
@@ -146,8 +155,8 @@ class MnnOpenAiServer(
                                 return@post
                             }
                             val messages = request.withToolPolicy(stagedMessages.messages)
-                            if (request.stream) streamCompletion(request, activeModel, messages, gate)
-                            else nonStreamCompletion(request, activeModel, messages, gate)
+                            if (request.stream) streamCompletion(request, activeModel, messages, gate, requestId)
+                            else nonStreamCompletion(request, activeModel, messages, gate, requestId)
                         }
                     } catch (error: Throwable) {
                         val (status, code) = generationError(error)
@@ -155,7 +164,7 @@ class MnnOpenAiServer(
                             respondOpenAiError(status, code, error.message ?: "MNN generation failed.")
                         }
                     } finally {
-                        gate.release()
+                        gate.release(requestId)
                         logStore.debug(TAG, "$requestId POST /v1/chat/completions completed in ${SystemClock.elapsedRealtime() - requestStartedAt}ms")
                     }
                 }
@@ -234,14 +243,22 @@ class MnnOpenAiServer(
         addProperty("owned_by", "mnn")
     }
 
+    fun cancelRequest(requestId: String): Boolean {
+        require(requestId.matches(Regex("[a-zA-Z0-9._:-]{1,128}"))) { "Invalid request ID." }
+        return requestGate?.cancel(requestId) { runtimeManager.cancelGeneration() } ?: false
+    }
+
+    fun isRequestActive(requestId: String): Boolean = requestGate?.isActive(requestId) == true
+
     private suspend fun io.ktor.server.routing.RoutingContext.nonStreamCompletion(
         request: MnnChatRequest,
         model: MnnModelInfo,
         messages: List<JsonObject>,
         gate: MnnRequestGate,
+        requestId: String,
     ) {
         val output = StringBuilder()
-        val metrics = generate(request, messages, gate) { token -> output.append(token); false }
+        val metrics = generate(request, messages, gate, requestId) { token -> output.append(token); false }
         val parsed = parseCompletion(request, model, output.toString())
         val finish = completionFinishReason(metrics.finishReason, parsed.toolCalls.isNotEmpty())
         respondJson(HttpStatusCode.OK, JsonObject().apply {
@@ -265,6 +282,7 @@ class MnnOpenAiServer(
         model: MnnModelInfo,
         messages: List<JsonObject>,
         gate: MnnRequestGate,
+        requestId: String,
     ) {
         call.response.headers.append(HttpHeaders.CacheControl, "no-cache")
         call.response.headers.append(HttpHeaders.Connection, "keep-alive")
@@ -293,7 +311,7 @@ class MnnOpenAiServer(
                 MnnReasoningOutputParser(MnnReasoningProfileDetector.detect(model))
             }
             val metrics = try {
-                generate(request, messages, gate) { token ->
+                generate(request, messages, gate, requestId) { token ->
                     output.append(token)
                     if (request.hasTools) {
                         false
@@ -362,12 +380,14 @@ class MnnOpenAiServer(
         request: MnnChatRequest,
         messages: List<JsonObject>,
         gate: MnnRequestGate,
+        requestId: String,
         onToken: (String) -> Boolean,
     ) =
         withContext(Dispatchers.IO) {
             runtimeManager.generate(
                 messages, request.effectiveTools(), request.temperature, request.topP, request.maxTokens,
-                canGenerate = { gate.isOpen }, onToken = onToken,
+                canGenerate = { gate.allows(requestId) },
+                onToken = { token -> !gate.allows(requestId) || onToken(token) },
             )
         }
 

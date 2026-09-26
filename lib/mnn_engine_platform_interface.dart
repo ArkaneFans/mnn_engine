@@ -64,6 +64,8 @@ abstract class MnnEnginePlatform extends PlatformInterface {
   });
   Future<void> stopServer();
   Future<void> cancelGeneration();
+  Future<bool> cancelRequest(String requestId);
+  Future<bool> isRequestActive(String requestId);
   Future<List<MnnLogEntry>> getLogSnapshot();
   Future<void> clearLogs();
   Stream<MnnRuntimeEvent> get events;
