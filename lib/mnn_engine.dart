@@ -106,16 +106,14 @@ class MnnEngine {
     apiKey: apiKey,
   );
 
+  /// Stops HTTP admission and waits for admitted native work to return.
+  /// On failure, retry stopping before unloading or starting another server.
+  /// The resident model is released separately by [unloadModel].
   Future<void> stopServer() => MnnEnginePlatform.instance.stopServer();
 
-  /// Cancels only the HTTP request carrying X-ServLlama-Request-Id.
-  /// true acknowledges a matching request, not native completion.
-  /// Poll [isRequestActive] before considering native work drained.
-  Future<bool> cancelRequest(String requestId) =>
-      MnnEnginePlatform.instance.cancelRequest(requestId);
-  Future<bool> isRequestActive(String requestId) =>
-      MnnEnginePlatform.instance.isRequestActive(requestId);
-
+  /// Requests cancellation of the current native generation only.
+  /// HTTP clients cancel by closing their request; they do not call this API.
+  /// Completion acknowledges the signal, not the end of native execution.
   Future<void> cancelGeneration() =>
       MnnEnginePlatform.instance.cancelGeneration();
 
