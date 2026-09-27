@@ -2,6 +2,7 @@ package com.arkanefans.mnn_engine.server
 
 import android.content.Context
 import android.os.SystemClock
+import com.arkanefans.mnn_engine.MnnEngineOperationException
 import com.arkanefans.mnn_engine.logging.MnnLogStore
 import com.arkanefans.mnn_engine.model.MnnModelInfo
 import com.arkanefans.mnn_engine.runtime.MnnNativeBridge
@@ -19,12 +20,21 @@ import io.ktor.server.engine.embeddedServer
 import io.ktor.server.plugins.calllogging.CallLogging
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respondText
-import io.ktor.server.response.respondTextWriter
+import io.ktor.server.response.respondBytesWriter
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
+import io.ktor.utils.io.writeStringUtf8
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.selects.onTimeout
+import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import org.slf4j.event.Level
 import java.io.IOException
@@ -118,17 +128,10 @@ class MnnOpenAiServer(
                         respondOpenAiError(HttpStatusCode.BadRequest, "model_vision_not_supported", "The loaded model does not provide a visual model.")
                         return@post
                     }
-                    val requestId = call.request.headers["X-ServLlama-Request-Id"]
-                        ?: UUID.randomUUID().toString()
-                    if (!requestId.matches(Regex("[a-zA-Z0-9._:-]{1,128}"))) {
-                        respondOpenAiError(HttpStatusCode.BadRequest, "invalid_request_id", "Invalid request ID.")
-                        return@post
-                    }
+                    // Internal ownership for cancellation, logs and staged media.
+                    // HTTP clients need no engine-specific headers or control API.
+                    val requestId = UUID.randomUUID().toString()
                     when (gate.acquire(requestId)) {
-                        MnnRequestGate.Admission.CANCELLED -> {
-                            respondOpenAiError(HttpStatusCode.Conflict, "request_cancelled", "Request was cancelled.")
-                            return@post
-                        }
                         MnnRequestGate.Admission.STOPPING -> {
                             respondServerStopping()
                             return@post
@@ -139,7 +142,7 @@ class MnnOpenAiServer(
                         }
                         MnnRequestGate.Admission.ACCEPTED -> Unit
                     }
-                    val requestStartedAt = SystemClock.elapsedRealtime()
+                    val requestStartedAt = System.nanoTime()
                     logStore.debug(TAG, "$requestId POST /v1/chat/completions started")
                     try {
                         val staged = try {
@@ -159,13 +162,16 @@ class MnnOpenAiServer(
                             else nonStreamCompletion(request, activeModel, messages, gate, requestId)
                         }
                     } catch (error: Throwable) {
+                        // A committed response can no longer carry an HTTP
+                        // error; generate() has already joined native work.
+                        if (error is IOException && call.response.isCommitted) return@post
                         val (status, code) = generationError(error)
                         if (!call.response.isCommitted) {
                             respondOpenAiError(status, code, error.message ?: "MNN generation failed.")
                         }
                     } finally {
                         gate.release(requestId)
-                        logStore.debug(TAG, "$requestId POST /v1/chat/completions completed in ${SystemClock.elapsedRealtime() - requestStartedAt}ms")
+                        logStore.debug(TAG, "$requestId POST /v1/chat/completions completed in ${(System.nanoTime() - requestStartedAt) / 1_000_000}ms")
                     }
                 }
             }
@@ -199,8 +205,17 @@ class MnnOpenAiServer(
     @Synchronized
     fun stop() {
         requestGate?.close()
+        serverInfo = serverInfo?.copy(running = false)
         runtimeManager.cancelGeneration()
         engine?.stop(gracePeriodMillis = 1000, timeoutMillis = 5000)
+        if (requestGate?.awaitIdle(timeoutMillis = 5000) == false) {
+            // Retain the closed gate/server ownership so neither a restart nor
+            // model unloading can race native work left behind by CIO's timeout.
+            throw MnnEngineOperationException(
+                "server_stop_timeout",
+                "Native generation is still stopping. Retry stopServer before unloading the model.",
+            )
+        }
         engine = null
         serverInfo = null
         requestGate = null
@@ -243,13 +258,6 @@ class MnnOpenAiServer(
         addProperty("owned_by", "mnn")
     }
 
-    fun cancelRequest(requestId: String): Boolean {
-        require(requestId.matches(Regex("[a-zA-Z0-9._:-]{1,128}"))) { "Invalid request ID." }
-        return requestGate?.cancel(requestId) { runtimeManager.cancelGeneration() } ?: false
-    }
-
-    fun isRequestActive(requestId: String): Boolean = requestGate?.isActive(requestId) == true
-
     private suspend fun io.ktor.server.routing.RoutingContext.nonStreamCompletion(
         request: MnnChatRequest,
         model: MnnModelInfo,
@@ -258,7 +266,7 @@ class MnnOpenAiServer(
         requestId: String,
     ) {
         val output = StringBuilder()
-        val metrics = generate(request, messages, gate, requestId) { token -> output.append(token); false }
+        val metrics = generate(request, messages, gate, requestId) { token -> output.append(token) }
         val parsed = parseCompletion(request, model, output.toString())
         val finish = completionFinishReason(metrics.finishReason, parsed.toolCalls.isNotEmpty())
         respondJson(HttpStatusCode.OK, JsonObject().apply {
@@ -285,17 +293,16 @@ class MnnOpenAiServer(
         requestId: String,
     ) {
         call.response.headers.append(HttpHeaders.CacheControl, "no-cache")
-        call.response.headers.append(HttpHeaders.Connection, "keep-alive")
-        call.respondTextWriter(ContentType.Text.EventStream, HttpStatusCode.OK) {
+        call.respondBytesWriter(ContentType.Text.EventStream, HttpStatusCode.OK) {
             val completionId = "chatcmpl-${UUID.randomUUID()}"
             val created = System.currentTimeMillis() / 1000
-            var disconnected = false
-            fun send(data: String): Boolean = try {
-                write("data: $data\n\n"); flush(); false
-            } catch (_: IOException) { disconnected = true; true }
-            fun sendDelta(delta: MnnReasoningDelta): Boolean {
-                if (delta.isEmpty) return false
-                return send(chunk(
+            suspend fun send(data: String) {
+                writeStringUtf8("data: $data\n\n")
+                flush()
+            }
+            suspend fun sendDelta(delta: MnnReasoningDelta) {
+                if (delta.isEmpty) return
+                send(chunk(
                     completionId,
                     created,
                     model.modelId,
@@ -310,34 +317,15 @@ class MnnOpenAiServer(
             } else {
                 MnnReasoningOutputParser(MnnReasoningProfileDetector.detect(model))
             }
-            val metrics = try {
-                generate(request, messages, gate, requestId) { token ->
-                    output.append(token)
-                    if (request.hasTools) {
-                        false
-                    } else {
-                        disconnected || reasoningParser!!.accept(token).any { delta ->
-                            sendDelta(delta)
-                        }
-                    }
+            try {
+                val metrics = generate(
+                    request, messages, gate, requestId,
+                    onHeartbeat = { writeStringUtf8(": keep-alive\n\n"); flush() },
+                ) { token ->
+                    if (request.hasTools) output.append(token)
+                    else for (delta in reasoningParser!!.accept(token)) sendDelta(delta)
                 }
-            } catch (error: Throwable) {
-                val (_, code) = generationError(error)
-                if (!disconnected) {
-                    send(JsonObject().apply { add("error", JsonObject().apply {
-                        addProperty("message", error.message ?: "MNN generation failed.")
-                        addProperty("code", code)
-                    }) }.toString())
-                    send("[DONE]")
-                }
-                return@respondTextWriter
-            }
-            if (!disconnected) {
-                for (delta in reasoningParser?.finish().orEmpty()) {
-                    if (sendDelta(delta)) break
-                }
-            }
-            if (!disconnected) {
+                for (delta in reasoningParser?.finish().orEmpty()) sendDelta(delta)
                 val parsed = if (request.hasTools) {
                     parseCompletion(request, model, output.toString())
                 } else {
@@ -372,24 +360,82 @@ class MnnOpenAiServer(
                     ),
                 ).toString())
                 send("[DONE]")
+            } catch (_: IOException) {
+                // This includes heartbeat failures before the first token.
+            } catch (error: Throwable) {
+                val (_, code) = generationError(error)
+                runCatching {
+                    send(JsonObject().apply { add("error", JsonObject().apply {
+                        addProperty("message", error.message ?: "MNN generation failed.")
+                        addProperty("code", code)
+                    }) }.toString())
+                    send("[DONE]")
+                }
             }
         }
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     private suspend fun generate(
         request: MnnChatRequest,
         messages: List<JsonObject>,
         gate: MnnRequestGate,
         requestId: String,
-        onToken: (String) -> Boolean,
-    ) =
-        withContext(Dispatchers.IO) {
-            runtimeManager.generate(
-                messages, request.effectiveTools(), request.temperature, request.topP, request.maxTokens,
-                canGenerate = { gate.allows(requestId) },
-                onToken = { token -> !gate.allows(requestId) || onToken(token) },
-            )
+        onHeartbeat: (suspend () -> Unit)? = null,
+        onToken: suspend (String) -> Unit,
+    ): MnnRuntimeManager.GenerationResult = supervisorScope {
+        // Only this coroutine writes the response. The bounded channel keeps
+        // backpressure without writing to a socket from a synchronous JNI callback.
+        val tokens = Channel<String>(16)
+        val native = async(Dispatchers.IO) {
+            try {
+                runtimeManager.generate(
+                    messages, request.effectiveTools(), request.temperature, request.topP, request.maxTokens,
+                    canGenerate = { gate.allows(requestId) },
+                    onToken = { token ->
+                        if (!gate.allows(requestId)) true else try {
+                            runBlocking { tokens.send(token) }
+                            false
+                        } catch (_: CancellationException) { true }
+                    },
+                )
+            } finally {
+                tokens.close()
+            }
         }
+        try {
+            var nextHeartbeat = System.nanoTime() + 1_000_000_000
+            while (select {
+                tokens.onReceiveCatching { next ->
+                    if (next.isClosed) false else {
+                        onToken(next.getOrThrow())
+                        true
+                    }
+                }
+                if (onHeartbeat != null) {
+                    onTimeout(((nextHeartbeat - System.nanoTime()) / 1_000_000).coerceAtLeast(1)) { true }
+                }
+            }) {
+                // Use elapsed time, not a token-idle timeout: buffered tool
+                // output may keep producing tokens without any HTTP writes.
+                if (onHeartbeat != null && System.nanoTime() >= nextHeartbeat) {
+                    onHeartbeat()
+                    nextHeartbeat = System.nanoTime() + 1_000_000_000
+                }
+            }
+            native.await()
+        } finally {
+            // Coroutine cancellation alone cannot interrupt JNI, especially
+            // prefill. Signal the owned generation, unblock its callback, then
+            // join without cancellation before releasing admission or media.
+            try {
+                if (!native.isCompleted) gate.cancel(requestId) { runtimeManager.cancelGeneration() }
+            } finally {
+                tokens.cancel()
+                withContext(NonCancellable) { native.join() }
+            }
+        }
+    }
 
     private suspend fun io.ktor.server.routing.RoutingContext.respondServerStopping() {
         respondOpenAiError(HttpStatusCode.ServiceUnavailable, "server_stopping", "MNN API server is stopping.")

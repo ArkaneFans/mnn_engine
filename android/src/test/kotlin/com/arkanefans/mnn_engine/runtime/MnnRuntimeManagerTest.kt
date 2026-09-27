@@ -178,6 +178,33 @@ class MnnRuntimeManagerTest {
         }
     }
 
+    @Test
+    fun teardownCannotReleaseAHandleWhileNativeGenerationIsStillRunning() {
+        val entered = CountDownLatch(1)
+        val finish = CountDownLatch(1)
+        val worker = Executors.newSingleThreadExecutor()
+        val fixture = Fixture {
+            entered.countDown()
+            check(finish.await(10, TimeUnit.SECONDS))
+            metrics("cancelled")
+        }
+        try {
+            val generation = worker.submit<MnnRuntimeManager.GenerationResult> { fixture.generate() }
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            assertFailsWith<MnnRuntimeManager.GenerationBusyException> { fixture.manager.release() }
+            Mockito.verify(fixture.session).cancel()
+            Mockito.verify(fixture.session, Mockito.never()).close()
+            finish.countDown()
+            generation.get(5, TimeUnit.SECONDS)
+            fixture.manager.release()
+            Mockito.verify(fixture.session).close()
+            assertNull(fixture.manager.activeModel())
+        } finally {
+            finish.countDown()
+            worker.shutdownNow()
+        }
+    }
+
     private class Fixture(generate: () -> MnnNativeSession.GenerationMetrics) {
         val model = MnnModelInfo(
             modelId = "qwen", modelKey = "qwen", displayName = "Qwen", vendor = null,
@@ -201,7 +228,7 @@ class MnnRuntimeManagerTest {
             Mockito.`when`(it.find(model.modelId, null)).thenReturn(model)
         }
         val manager = MnnRuntimeManager(
-            Mockito.mock(MnnTestDirectories::class.java), repository, MnnLogStore(),
+            Mockito.mock(MnnTestDirectories::class.java), repository, Mockito.mock(MnnLogStore::class.java),
         ) { modelState, generationState, activeModel, lastError ->
             snapshots.add(RuntimeSnapshot(
                 modelState = modelState, generationState = generationState,

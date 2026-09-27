@@ -176,10 +176,6 @@ class MethodChannelMnnEngine extends MnnEnginePlatform {
   Future<void> stopServer() => _invokeVoid('stopServer');
 
   @override
-  Future<bool> cancelRequest(String requestId) => _invoke<bool>('cancelRequest', {'requestId': requestId});
-  @override
-  Future<bool> isRequestActive(String requestId) => _invoke<bool>('isRequestActive', {'requestId': requestId});
-  @override
   Future<void> cancelGeneration() => _invokeVoid('cancelGeneration');
 
   @override

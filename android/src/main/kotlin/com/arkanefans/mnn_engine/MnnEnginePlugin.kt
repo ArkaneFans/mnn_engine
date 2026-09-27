@@ -166,14 +166,6 @@ class MnnEnginePlugin :
                     currentService.unloadModel()
                     null
                 }
-                "cancelRequest" -> {
-                    val id = call.argument<String>("requestId") ?: throw IllegalArgumentException("requestId is required")
-                    result.success(currentService.cancelRequest(id))
-                }
-                "isRequestActive" -> {
-                    val id = call.argument<String>("requestId") ?: throw IllegalArgumentException("requestId is required")
-                    result.success(currentService.isRequestActive(id))
-                }
                 "cancelGeneration" -> {
                     currentService.cancelGeneration()
                     result.success(null)
