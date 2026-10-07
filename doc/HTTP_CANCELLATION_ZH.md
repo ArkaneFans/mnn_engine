@@ -1,10 +1,10 @@
 # HTTP 请求取消与停服契约
 
-适用：0.2.0-dev.2。MNN 原生 ABI 和固定的 3.6.1 源码版本不变。
+适用：0.2.0。MNN 原生 ABI 和固定的 3.6.1 源码版本不变。
 
 ## 客户端用法
 
-HTTP 客户端通过取消自己的请求或关闭响应流停止接收。无需专用请求头、MethodChannel 取消接口或状态轮询。0.2.0-dev.1 中尚未发布的 X-ServLlama-Request-Id、cancelRequest、isRequestActive 已删除。
+HTTP 客户端通过取消自己的请求或关闭响应流停止接收。无需专用请求头、MethodChannel 取消接口或状态轮询；请求 ID 仅在服务器内部使用。
 
 插件仍只同时执行一个请求，其他请求返回 HTTP 429 / request_queue_full。此错误码沿用已有兼容行为，不代表存在 FIFO 队列。
 

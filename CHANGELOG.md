@@ -1,19 +1,11 @@
-## 0.2.0-dev.2
+## 0.2.0
 
-- Remove the unpublished request-ID header, `cancelRequest` and `isRequestActive` APIs. HTTP clients cancel their own transport; server-generated request IDs remain internal.
+- Keep HTTP request ownership inside the server. Clients cancel their own transport; server-generated request IDs remain internal.
 - Signal native cancellation when an HTTP coroutine is cancelled or an SSE write fails. Emit SSE comment heartbeats during prefill and buffered tool output, and keep token buffering bounded.
 - Join synchronous JNI work before releasing request admission or staged media. Keep one active generation and HTTP 429 for contention; there is no generation queue.
 - Make `stopServer` wait for admitted native work to return. A drain timeout retains ownership and prevents restart/unload until stopping is retried successfully. Service teardown also observes the native-drain guard.
 - Keep `cancelGeneration` as a signal for the current native generation, and retain the Android special-use foreground service type. Native ABI and the pinned MNN revision are unchanged.
 - TCP half-close alone is not proof of cancellation. HTTP disconnect handling is best effort; only successful stop and unload establish that local resources are released. See `doc/HTTP_CANCELLATION_ZH.md` for the contract and validation boundary.
-
-## 0.2.0-dev.1
-
-- Add request-scoped cancellation for HTTP requests carrying X-ServLlama-Request-Id.
-- Add isRequestActive to distinguish cancellation acknowledgement from native completion.
-- Preserve server admission until native generation returns; cancelled pre-admission IDs cannot run later.
-- Use the special-use foreground type for user-started local inference on Android 14+.
-- Native MNN ABI and pinned source revision remain unchanged. Device cancellation/prefill validation is pending.
 
 ## 0.1.1
 
