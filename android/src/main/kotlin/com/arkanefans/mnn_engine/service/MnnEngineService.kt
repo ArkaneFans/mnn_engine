@@ -366,7 +366,7 @@ class MnnEngineService : Service() {
         val model = runtimeManager.activeModel()
             ?: throw MnnEngineOperationException("model_not_loaded", "Load a model before starting the MNN Server.")
         openAiServer.info()?.let { existing ->
-            if (existing.bindMode == mode.wireName && existing.port == port) return existing.toMap()
+            if (existing.running && existing.bindMode == mode.wireName && existing.port == port) return existing.toMap()
             throw MnnEngineOperationException("server_start_failed", "MNN Server is already running at ${existing.baseUrl}.")
         }
         updateSnapshot(snapshot.copy(serverState = "starting", lastError = null))
@@ -417,7 +417,12 @@ class MnnEngineService : Service() {
             return
         }
         updateSnapshot(snapshot.copy(serverState = "stopping"))
-        openAiServer.stop()
+        try {
+            openAiServer.stop()
+        } catch (error: Throwable) {
+            updateSnapshot(snapshot.copy(serverState = "error", server = openAiServer.info()?.toMap(), lastError = error.message))
+            throw error
+        }
         clearForegroundSession()
         updateSnapshot(snapshot.copy(serverState = "stopped", server = null, lastError = null))
     }
@@ -516,7 +521,7 @@ class MnnEngineService : Service() {
             startForeground(
                 MnnNotificationManager.NOTIFICATION_ID,
                 notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+                if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0,
             )
         } else {
             startForeground(MnnNotificationManager.NOTIFICATION_ID, notification)
@@ -565,9 +570,13 @@ class MnnEngineService : Service() {
     }
 
     override fun onDestroy() {
-        runCatching { openAiServer.stop() }
+        runCatching {
+            openAiServer.stop()
+            runtimeManager.release()
+        }.onFailure { error ->
+            logStore.error(TAG, "Native cleanup was not confirmed during service teardown", error)
+        }
         clearForegroundSession(stopService = false)
-        runtimeManager.release()
         logStore.debug(TAG, "Service destroyed")
         runtimeListeners.clear()
         super.onDestroy()

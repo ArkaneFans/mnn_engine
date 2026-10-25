@@ -89,7 +89,9 @@ android {
 }
 ```
 
-插件 Manifest 会合并 Internet、前台 Service、data sync 前台 Service 和通知权限。
+当前 0.2.0 开发分支尚未发布，[HTTP 取消与停服契约](doc/HTTP_CANCELLATION_ZH.md)说明请求取消和原生资源释放的边界。
+
+开发版插件 Manifest 会合并 Internet、前台 Service、specialUse 前台 Service 和通知权限。
 Android 13 及以上的通知运行时授权，应由宿主应用按自己的交互流程申请。
 
 ## 快速开始

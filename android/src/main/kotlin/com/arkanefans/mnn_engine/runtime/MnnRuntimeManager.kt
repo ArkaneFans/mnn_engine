@@ -233,12 +233,9 @@ class MnnRuntimeManager(
 
     fun release() {
         cancelGeneration()
-        synchronized(lock) {
-            nativeSession?.close()
-            nativeSession = null
-            activeModel = null
-            loadedOptions = null
-        }
+        // Lifecycle teardown must obey the same native-drain guard as unload.
+        // A cancellation signal alone does not make a JNI handle safe to close.
+        unload()
     }
 
     private fun createRuntimeConfig(model: MnnModelInfo, options: MnnLoadOptions): JsonObject {

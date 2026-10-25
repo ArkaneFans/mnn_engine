@@ -49,6 +49,9 @@ Host apps do not need MNN source, CMake, the Android NDK, Linux, or WSL.
 iOS, desktop platforms, `armeabi-v7a`, `x86`, and `x86_64` are not currently
 supported.
 
+The 0.2.0 development branch is unpublished. Its HTTP cancellation and native
+drain contract is documented in [HTTP cancellation](doc/HTTP_CANCELLATION_ZH.md).
+
 ## Installation
 
 Add the package to your Flutter application:
@@ -93,7 +96,7 @@ android {
 }
 ```
 
-The plugin manifest merges Internet, foreground service, data-sync
+The development plugin manifest merges Internet, foreground service, special-use
 foreground service, and notification permissions. On Android 13 and newer,
 the host application should request notification permission in its own UI.
 
