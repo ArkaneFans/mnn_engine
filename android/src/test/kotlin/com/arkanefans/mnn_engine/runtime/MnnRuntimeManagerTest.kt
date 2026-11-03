@@ -21,6 +21,18 @@ import kotlin.test.assertTrue
 
 class MnnRuntimeManagerTest {
     @Test
+    fun equalModelIdsDoNotReuseAResidentSessionFromADifferentDirectory() {
+        Mockito.mockStatic(Log::class.java).use {
+            val fixture = Fixture { metrics("stop") }
+            val error = assertFailsWith<MnnEngineOperationException> {
+                fixture.manager.load(fixture.model.modelId, directoryPath = "another/source-directory")
+            }
+            assertEquals("backend_unavailable", error.code)
+            Mockito.verify(fixture.session).close()
+        }
+    }
+
+    @Test
     fun generationFailureReleasesTheModelAndDoesNotReuseItOnReload() {
         Mockito.mockStatic(Log::class.java).use {
             for (failure in listOf(

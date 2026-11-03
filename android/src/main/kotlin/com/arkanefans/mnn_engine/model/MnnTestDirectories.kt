@@ -1,6 +1,7 @@
 package com.arkanefans.mnn_engine.model
 
 import android.content.Context
+import com.arkanefans.mnn_engine.runtime.MnnRuntimeCache
 import java.io.File
 
 class MnnTestDirectories(context: Context) {
@@ -40,5 +41,5 @@ class MnnTestDirectories(context: Context) {
     }
 
     fun modelDir(modelKey: String) = File(modelsDir, modelKey)
-    fun modelRuntimeDir(modelKey: String) = File(runtimeDir, modelKey)
+    fun modelRuntimeDir(modelKey: String) = MnnRuntimeCache.directory(runtimeDir, modelKey)
 }

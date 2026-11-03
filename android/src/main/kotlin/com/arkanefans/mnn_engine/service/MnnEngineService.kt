@@ -267,11 +267,19 @@ class MnnEngineService : Service() {
         }
     }
 
-    fun loadModel(modelId: String, options: MnnLoadOptions = MnnLoadOptions()): Map<String, Any?> {
+    fun getModelInfoFromPath(directoryPath: String): Map<String, Any?> =
+        com.arkanefans.mnn_engine.model.MnnExternalModelInfo.read(directoryPath).toMap()
+
+    fun loadModel(
+        modelId: String,
+        options: MnnLoadOptions = MnnLoadOptions(),
+        directoryPath: String? = null,
+        displayName: String? = null,
+    ): Map<String, Any?> {
         requireServerStopped("load or switch models")
         MnnNativeBridge.prepare(this)
         return try {
-            runtimeManager.load(modelId, options).toMap()
+            runtimeManager.load(modelId, options, directoryPath, displayName).toMap()
         } catch (error: MnnEngineOperationException) {
             throw error
         } catch (error: MnnRuntimeManager.GenerationBusyException) {
@@ -317,8 +325,7 @@ class MnnEngineService : Service() {
             )
         }
         directories.ensureCreated()
-        val modelKey = resolveRuntimeCacheKey(modelId)
-        val sizeBytes = MnnRuntimeCache.clear(directories.runtimeDir, modelKey)
+        val sizeBytes = MnnRuntimeCache.clear(directories.runtimeDir, modelId)
         logStore.info(
             TAG,
             if (modelId == null) {
@@ -335,19 +342,11 @@ class MnnEngineService : Service() {
     }
 
     private fun mmapCachePayload(modelId: String?, cleared: Boolean): Map<String, Any?> {
-        val modelKey = resolveRuntimeCacheKey(modelId)
         return mapOf(
-            "sizeBytes" to MnnRuntimeCache.sizeBytes(directories.runtimeDir, modelKey),
+            "sizeBytes" to MnnRuntimeCache.sizeBytes(directories.runtimeDir, modelId),
             "cleared" to cleared,
             "modelId" to modelId,
         )
-    }
-
-    private fun resolveRuntimeCacheKey(modelId: String?): String? {
-        if (modelId == null) return null
-        val model = repository.find(modelId, runtimeManager.activeModel()?.modelId)
-            ?: throw MnnEngineOperationException("model_not_found", "Model not found: $modelId")
-        return model.modelKey
     }
 
     fun startServer(bindMode: String, port: Int, apiKey: String?): Map<String, Any?> {

@@ -20,8 +20,8 @@ Host apps do not need MNN source, CMake, the Android NDK, Linux, or WSL.
 ## Features
 
 - Import, list, load, unload, rename, and delete complete MNN model
-  directories. The directory name is the runtime and API model ID.
-- Validate `config.json` and referenced model, weight, embedding, and
+  directories. The directory name is the default runtime and API model ID.
+- Validate imported directories' `config.json` and referenced model, weight, embedding, and
   tokenizer files before activation.
 - Keep model and server state in an Android foreground service, with
   snapshots, state events, and log streams.
@@ -31,6 +31,8 @@ Host apps do not need MNN source, CMake, the Android NDK, Linux, or WSL.
   cancelling the current generation.
 - Configure backend, mmap, precision, and generation threads when loading
   a model, and inspect or clear mmap/GPU caches.
+- Load host-accessible external directories in place with `loadModelFromPath`.
+  The host owns permissions and registration; runtime caches remain private.
 
 ## Platform support
 
@@ -159,6 +161,20 @@ downloaded a model into private storage, use:
 final imported = await engine.importModelFromPath(modelDirectory.path);
 ```
 
+To use an accessible external directory without copying it:
+
+```dart
+final metadata = await engine.getModelInfoFromPath(modelDirectory.path);
+await engine.loadModelFromPath(
+  modelDirectory.path,
+  modelId: 'My Qwen', // Omit to use the directory name.
+);
+```
+
+The host owns storage access and registration. Metadata reports directory size
+without validating referenced files. IDs also name private runtime caches;
+use distinct, valid directory-name IDs for models with identical basenames.
+
 ## Load options
 
 `loadModel()` accepts `MnnLoadOptions`. Omitted fields use the defaults below.
@@ -199,7 +215,8 @@ await engine.loadModel(
 
 `getMmapCache()` and `clearMmapCache()` report or delete generated mmap and
 GPU runtime caches. Unload the model before clearing. Pass `modelId` for one
-imported model, or omit it for all models. The next load rebuilds the cache.
+model, including a former name after renaming, or omit it for all models. Cache
+queries do not require an imported model record. The next load rebuilds caches.
 
 ```dart
 final cache = await engine.getMmapCache();

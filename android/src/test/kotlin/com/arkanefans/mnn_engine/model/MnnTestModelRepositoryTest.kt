@@ -6,6 +6,7 @@ import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import org.mockito.Mockito
@@ -61,6 +62,10 @@ class MnnTestModelRepositoryTest {
         try {
             val repository = repository(filesDir)
             createModel(filesDir, "before")
+            val oldCache = File(filesDir, "mnn/runtime/before/tmp/weight.bin").apply {
+                parentFile.mkdirs()
+                writeBytes(byteArrayOf(1))
+            }
 
             val renamed = repository.rename("before", "After model", null)
 
@@ -68,6 +73,7 @@ class MnnTestModelRepositoryTest {
             assertEquals("After model", renamed.displayName)
             assertNull(repository.find("before"))
             assertNotNull(repository.find("After model"))
+            assertFalse(oldCache.exists())
         } finally {
             filesDir.deleteRecursively()
         }

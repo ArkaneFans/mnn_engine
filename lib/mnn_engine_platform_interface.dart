@@ -47,6 +47,14 @@ abstract class MnnEnginePlatform extends PlatformInterface {
     MnnLoadOptions options = const MnnLoadOptions(),
   });
   Future<void> unloadModel();
+  Future<MnnModelInfo> getModelInfoFromPath(String directoryPath) =>
+      throw UnimplementedError('getModelInfoFromPath');
+  Future<MnnModelInfo> loadModelFromPath(
+    String directoryPath, {
+    String? modelId,
+    String? displayName,
+    MnnLoadOptions options = const MnnLoadOptions(),
+  }) => throw UnimplementedError('loadModelFromPath');
   Future<MnnMmapCacheInfo> getMmapCache({String? modelId});
   Future<MnnMmapCacheInfo> clearMmapCache({String? modelId});
 

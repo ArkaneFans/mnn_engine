@@ -137,6 +137,29 @@ class MethodChannelMnnEngine extends MnnEnginePlatform {
   Future<void> unloadModel() => _invokeVoid('unloadModel');
 
   @override
+  Future<MnnModelInfo> getModelInfoFromPath(String directoryPath) async =>
+      MnnModelInfo.fromMap(
+        await _invoke<Object?>('getModelInfoFromPath', {
+          'directoryPath': directoryPath,
+        }),
+      );
+
+  @override
+  Future<MnnModelInfo> loadModelFromPath(
+    String directoryPath, {
+    String? modelId,
+    String? displayName,
+    MnnLoadOptions options = const MnnLoadOptions(),
+  }) async => MnnModelInfo.fromMap(
+    await _invoke<Object?>('loadModelFromPath', {
+      'directoryPath': directoryPath,
+      'modelId': modelId,
+      'displayName': displayName,
+      'options': options.toMap(),
+    }),
+  );
+
+  @override
   Future<MnnMmapCacheInfo> getMmapCache({String? modelId}) async =>
       MnnMmapCacheInfo.fromMap(
         await _invoke<Object?>('getMmapCache', {'modelId': modelId}),

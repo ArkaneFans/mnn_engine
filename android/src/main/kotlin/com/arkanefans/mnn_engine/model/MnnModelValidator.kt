@@ -52,9 +52,7 @@ class MnnModelValidator {
                 validateReferencedFile(modelDir, key, relativePath)
             }
         }
-        val supportsVision = root.booleanValue("is_visual") == true ||
-            llmConfig.booleanValue("is_visual") == true ||
-            !root.stringValue("visual_model").isNullOrBlank()
+        val (supportsVision, supportsToolCalling) = capabilities(root, llmConfig)
         if (supportsVision) {
             val visualModel = root.stringValue("visual_model") ?: DEFAULT_VISUAL_MODEL_FILE
             validateReferencedFile(
@@ -66,9 +64,6 @@ class MnnModelValidator {
                 ?: "$visualModel.weight"
             validateReferencedFile(modelDir, "visual_weight", visualWeight)
         }
-        val chatTemplate = root.chatTemplate() ?: llmConfig.chatTemplate().orEmpty()
-        val supportsToolCalling = chatTemplate.contains("tools") &&
-            chatTemplate.contains("tool_call") && chatTemplate.contains("tool_response")
         return ValidationResult(root, warnings, supportsVision, supportsToolCalling)
     }
 
@@ -100,6 +95,17 @@ class MnnModelValidator {
         getAsJsonObject("jinja")?.stringValue("chat_template")
 
     companion object {
+        fun capabilities(root: JsonObject, llmConfig: JsonObject): Pair<Boolean, Boolean> {
+            val validator = MnnModelValidator()
+            return with(validator) {
+                val vision = root.booleanValue("is_visual") == true ||
+                    llmConfig.booleanValue("is_visual") == true ||
+                    !root.stringValue("visual_model").isNullOrBlank()
+                val template = root.chatTemplate() ?: llmConfig.chatTemplate().orEmpty()
+                vision to (template.contains("tools") && template.contains("tool_call") && template.contains("tool_response"))
+            }
+        }
+
         const val CONFIG_FILE = "config.json"
         private const val DEFAULT_LLM_CONFIG_FILE = "llm_config.json"
         private const val DEFAULT_VISUAL_MODEL_FILE = "visual.mnn"
