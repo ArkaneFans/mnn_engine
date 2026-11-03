@@ -13,6 +13,31 @@ import org.mockito.Mockito
 
 class MnnTestModelRepositoryTest {
     @Test
+    fun deletesMissingModelsAndTheirCachesWithoutInventoryValidation() {
+        val filesDir = createTempDirectory("mnn-delete").toFile()
+        try {
+            val repo = repository(filesDir)
+            val cache = File(filesDir, "mnn/runtime/gone/tmp/weights.bin").apply {
+                parentFile.mkdirs()
+                writeBytes(byteArrayOf(1))
+            }
+            repo.delete("gone", null)
+            assertFalse(cache.exists())
+            repo.delete("gone", null)
+            val invalid = File(filesDir, "mnn/models/invalid").apply { mkdirs() }
+            File(invalid, "weights.bin").writeBytes(byteArrayOf(1))
+            repo.delete("invalid", null)
+            assertFalse(invalid.exists())
+            for (id in listOf("..", "../outside", "a/b", "a\\b")) {
+                assertFailsWith<IllegalArgumentException> { repo.delete(id, null) }
+            }
+            assertFailsWith<IllegalArgumentException> { repo.delete("active", "active") }
+        } finally {
+            filesDir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun usesTheModelKeyAsTheDefaultModelId() {
         val filesDir = createTempDirectory("mnn-repository").toFile()
         try {

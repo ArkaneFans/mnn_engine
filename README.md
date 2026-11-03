@@ -253,6 +253,12 @@ directory and must exist. Imported models are copied to:
 
 Model files and model licenses are not distributed with this plugin.
 
+`deleteImportedModel()` removes the private model directory and its generated
+runtime cache after the server is stopped and the model is unloaded. It checks
+the model name and private path without scanning inventory or validating the
+configuration. Missing model files are skipped; their runtime cache is still
+removed. Repeating the deletion is safe when both directories are absent.
+
 ## OpenAI-compatible API
 
 The default server address is `http://127.0.0.1:8081`.
