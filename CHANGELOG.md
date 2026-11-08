@@ -1,3 +1,10 @@
+## 0.2.1
+
+- Add `loadModelFromPath` to load external MNN directories without copying, with optional host-defined model IDs and display names. Storage access and registration remain the host's responsibility.
+- Add `getModelInfoFromPath` to read directory size and optional capabilities without importing or validating referenced files.
+- Allow mmap/GPU cache inspection and cleanup by model ID without an imported model record, including external models and former IDs after renaming.
+- Simplify `deleteImportedModel`: remove the private model directory and runtime caches without scanning inventory or validating configuration; skip missing files and allow repeated deletion.
+
 ## 0.2.0
 
 - Keep HTTP request ownership inside the server. Clients cancel their own transport; server-generated request IDs remain internal.
