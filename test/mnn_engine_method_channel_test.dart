@@ -44,6 +44,67 @@ void main() {
     expect(info.nativeLibraryLoaded, isTrue);
   });
 
+  test(
+    'external model APIs forward the original directory without importing',
+    () async {
+      final methods = <String>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            methods.add(call.method);
+            expect(
+              (call.arguments as Map)['directoryPath'],
+              '/storage/emulated/0/Models/Qwen',
+            );
+            if (call.method == 'loadModelFromPath') {
+              expect((call.arguments as Map)['modelId'], 'My Qwen');
+              expect((call.arguments as Map)['displayName'], 'My Qwen');
+              expect(
+                ((call.arguments as Map)['options'] as Map)['backend'],
+                'vulkan',
+              );
+            }
+            return {
+              'modelId': call.method == 'loadModelFromPath'
+                  ? 'My Qwen'
+                  : 'Qwen',
+              'sizeBytes': 2048,
+              'modelDirPath': '/storage/emulated/0/Models/Qwen',
+            };
+          });
+      final info = await platform.getModelInfoFromPath(
+        '/storage/emulated/0/Models/Qwen',
+      );
+      final loaded = await platform.loadModelFromPath(
+        '/storage/emulated/0/Models/Qwen',
+        modelId: 'My Qwen',
+        displayName: 'My Qwen',
+        options: const MnnLoadOptions(backend: MnnBackend.vulkan),
+      );
+      expect(info.modelDirPath, loaded.modelDirPath);
+      expect(info.modelId, 'Qwen');
+      expect(loaded.modelId, 'My Qwen');
+      expect(info.sizeBytes, 2048);
+      expect(methods, ['getModelInfoFromPath', 'loadModelFromPath']);
+    },
+  );
+
+  test(
+    'path loading leaves the directory-name default to the plugin',
+    () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            expect(call.method, 'loadModelFromPath');
+            expect((call.arguments as Map)['modelId'], isNull);
+            return {'modelId': 'Qwen', 'displayName': 'Qwen'};
+          });
+      final model = await platform.loadModelFromPath(
+        '/storage/emulated/0/Models/Qwen',
+      );
+      expect(model.modelId, 'Qwen');
+      expect(model.displayName, 'Qwen');
+    },
+  );
+
   test('checkPort sends host and port', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {

@@ -154,6 +154,24 @@ class MnnEnginePlugin :
                         ?: throw IllegalArgumentException("newName is required.")
                     executeIo(result) { currentService.renameImportedModel(modelId, newName) }
                 }
+                "getModelInfoFromPath" -> {
+                    val path = call.argument<String>("directoryPath")
+                        ?: throw IllegalArgumentException("directoryPath is required.")
+                    executeIo(result) { currentService.getModelInfoFromPath(path) }
+                }
+                "loadModelFromPath" -> {
+                    val path = call.argument<String>("directoryPath")
+                        ?: throw IllegalArgumentException("directoryPath is required.")
+                    val options = com.arkanefans.mnn_engine.runtime.MnnLoadOptions.fromMap(
+                        call.argument<Map<*, *>>("options"),
+                    )
+                    executeIo(result) {
+                        currentService.loadModel(
+                            call.argument<String>("modelId") ?: java.io.File(path).name,
+                            options, path, call.argument<String>("displayName"),
+                        )
+                    }
+                }
                 "loadModel" -> {
                     val modelId = call.argument<String>("modelId")
                         ?: throw IllegalArgumentException("modelId is required.")

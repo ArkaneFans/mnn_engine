@@ -6,6 +6,7 @@ import com.arkanefans.mnn_engine.MnnEngineOperationException
 import com.arkanefans.mnn_engine.logging.MnnLogStore
 import com.arkanefans.mnn_engine.model.MnnModelInfo
 import com.arkanefans.mnn_engine.runtime.MnnRuntimeManager
+import com.google.gson.JsonPrimitive
 import org.mockito.Mockito
 import java.io.BufferedInputStream
 import java.net.HttpURLConnection
@@ -28,6 +29,25 @@ import kotlin.test.assertTrue
 
 /** Real CIO sockets, with only the synchronous native call replaced by latches. */
 class MnnOpenAiServerCancellationTest {
+    @Test
+    fun servesTheHostModelIdEvenWhenTheSourceDirectoryHasAnotherName() {
+        val id = "Qwen3.5-0.8B-MNN"
+        Fixture(modelId = id, displayName = id, modelDirPath = "external/original-folder").use { f ->
+            val wrong = f.post(requestedModel = "original-folder")
+            assertEquals(404, wrong.first)
+            assertTrue(wrong.second.contains("model_not_found"))
+            assertEquals(0, f.generations.get())
+            val models = URL("http://127.0.0.1:${f.port}/v1/models").openStream()
+                .bufferedReader().use { it.readText() }
+            assertTrue(models.contains("\"id\":\"$id\""))
+            f.allowReturn.countDown()
+            val response = f.post(requestedModel = id)
+            assertEquals(200, response.first)
+            assertTrue(response.second.contains("\"model\":\"$id\""))
+            assertEquals(1, f.generations.get())
+        }
+    }
+
     @Test
     fun disconnectDuringPrefillCancelsNativeAndRetainsAdmissionUntilItReturns() {
         assertStreamingDisconnect(hasTools = false)
@@ -175,7 +195,12 @@ class MnnOpenAiServerCancellationTest {
         }
     }
 
-    private class Fixture(bufferToolOutput: Boolean = false) : AutoCloseable {
+    private class Fixture(
+        bufferToolOutput: Boolean = false,
+        modelId: String = "qwen",
+        displayName: String = "Qwen",
+        modelDirPath: String = "unused",
+    ) : AutoCloseable {
         private val directory = Files.createTempDirectory("mnn-http-cancel").toFile()
         val started = CountDownLatch(1)
         val cancelled = CountDownLatch(1)
@@ -185,8 +210,8 @@ class MnnOpenAiServerCancellationTest {
         val cancellations = AtomicInteger()
         val executor = Executors.newSingleThreadExecutor()
         private val model = MnnModelInfo(
-            modelId = "qwen", modelKey = "qwen", displayName = "Qwen", vendor = null,
-            modelDirPath = "unused", configPath = "unused/config.json", sizeBytes = 0,
+            modelId = modelId, modelKey = modelId, displayName = displayName, vendor = null,
+            modelDirPath = modelDirPath, configPath = "$modelDirPath/config.json", sizeBytes = 0,
             importedAt = 0, isActive = true, backend = "cpu", supportsToolCalling = true,
         )
         private val runtime = Mockito.mock(MnnRuntimeManager::class.java) { invocation ->
@@ -246,7 +271,7 @@ class MnnOpenAiServerCancellationTest {
             }
         }
 
-        fun post(stream: Boolean = false): Pair<Int, String> {
+        fun post(stream: Boolean = false, requestedModel: String? = null): Pair<Int, String> {
             val connection = URL("http://127.0.0.1:$port/v1/chat/completions").openConnection() as HttpURLConnection
             try {
                 connection.requestMethod = "POST"
@@ -254,8 +279,9 @@ class MnnOpenAiServerCancellationTest {
                 connection.readTimeout = 5000
                 connection.doOutput = true
                 connection.setRequestProperty("Content-Type", "application/json")
+                val modelField = requestedModel?.let { "\"model\":${JsonPrimitive(it)}," }.orEmpty()
                 connection.outputStream.use {
-                    it.write("""{"messages":[{"role":"user","content":"hello"}],"stream":$stream}""".toByteArray())
+                    it.write("""{$modelField"messages":[{"role":"user","content":"hello"}],"stream":$stream}""".toByteArray())
                 }
                 val status = connection.responseCode
                 return status to (if (status >= 400) connection.errorStream else connection.inputStream)

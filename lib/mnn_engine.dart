@@ -77,14 +77,34 @@ class MnnEngine {
 
   Future<void> unloadModel() => MnnEnginePlatform.instance.unloadModel();
 
+  /// Reads directory size and optional capability metadata without copying or
+  /// registering files. The default model ID is the directory name.
+  Future<MnnModelInfo> getModelInfoFromPath(String directoryPath) =>
+      MnnEnginePlatform.instance.getModelInfoFromPath(directoryPath);
+
+  /// Loads a host-accessible directory in place. The host owns storage access
+  /// and persistence; generated runtime caches remain private to the plugin.
+  /// [modelId] defaults to the directory name and also identifies its cache.
+  Future<MnnModelInfo> loadModelFromPath(
+    String directoryPath, {
+    String? modelId,
+    String? displayName,
+    MnnLoadOptions options = const MnnLoadOptions(),
+  }) => MnnEnginePlatform.instance.loadModelFromPath(
+    directoryPath,
+    modelId: modelId,
+    displayName: displayName,
+    options: options,
+  );
+
   /// Reports the size of generated mmap and GPU runtime caches.
-  /// Pass [modelId] to inspect one imported model; omit it for the total.
+  /// Pass [modelId] to inspect one model's cache; omit it for the total.
   Future<MnnMmapCacheInfo> getMmapCache({String? modelId}) =>
       MnnEnginePlatform.instance.getMmapCache(modelId: modelId);
 
   /// Deletes generated mmap and GPU runtime caches.
-  /// The model must not be loaded. Pass [modelId] to clear one imported model;
-  /// omit it to clear every model's cache.
+  /// The model must not be loaded. Pass [modelId] to clear one model's cache,
+  /// including a former ID after renaming; omit it to clear all caches.
   Future<MnnMmapCacheInfo> clearMmapCache({String? modelId}) =>
       MnnEnginePlatform.instance.clearMmapCache(modelId: modelId);
 

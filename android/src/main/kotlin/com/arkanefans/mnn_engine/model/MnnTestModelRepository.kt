@@ -23,12 +23,17 @@ class MnnTestModelRepository(
 
     fun delete(modelId: String, activeModelId: String?) {
         require(modelId != activeModelId) { "The active model cannot be deleted." }
-        val model = find(modelId, activeModelId) ?: throw IllegalArgumentException("Model not found: $modelId")
+        validateModelName(modelId)
         val modelsRoot = directories.modelsDir.canonicalFile
-        val target = File(model.modelDirPath).canonicalFile
+        val target = directories.modelDir(modelId).canonicalFile
         require(target.parentFile == modelsRoot) { "Model path is outside the test model directory." }
-        check(target.deleteRecursively()) { "Failed to delete ${target.absolutePath}" }
-        directories.modelRuntimeDir(model.modelKey).takeIf(File::exists)?.deleteRecursively()
+        if (target.exists()) {
+            check(target.deleteRecursively()) { "Failed to delete ${target.absolutePath}" }
+        }
+        val runtime = directories.modelRuntimeDir(modelId)
+        if (runtime.exists()) {
+            check(runtime.deleteRecursively()) { "Failed to delete model runtime cache." }
+        }
     }
 
     fun rename(modelId: String, newName: String, activeModelId: String?): MnnModelInfo {

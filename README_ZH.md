@@ -18,9 +18,9 @@ CMake、Android NDK、Linux 或 WSL。
 
 ## 功能特性
 
-- 导入、列出、加载、卸载、重命名和删除完整 MNN 模型目录；目录名同时作为
+- 导入、列出、加载、卸载、重命名和删除完整 MNN 模型目录；默认使用目录名作为
   运行时和 API 模型 ID。
-- 加载前校验 `config.json` 以及模型、权重、embedding、tokenizer 等引用文件。
+- 对导入的模型校验 `config.json` 以及模型、权重、embedding、tokenizer 等引用文件。
 - 使用 Android 前台 Service 管理模型与 API Server，并提供运行快照、状态事件
   和日志流。
 - 提供 OpenAI 兼容的 `/v1/models` 和 `/v1/chat/completions`，可监听 loopback
@@ -28,6 +28,8 @@ CMake、Android NDK、Linux 或 WSL。
   function tools、推理内容和取消生成。
 - 加载模型时可配置推理后端、mmap、计算精度和生成线程数，并查询或清理
   mmap/GPU 缓存。
+- 使用 `loadModelFromPath` 直接加载宿主可访问的外部模型目录，不复制源模型。
+  权限和模型登记由宿主管理，运行缓存仍保存在插件私有目录。
 
 ## 支持范围
 
@@ -151,6 +153,20 @@ Flutter Activity 时调用。如果宿主应用已经把模型下载到私有目
 final imported = await engine.importModelFromPath(modelDirectory.path);
 ```
 
+直接使用可访问的外部目录而不复制模型：
+
+```dart
+final metadata = await engine.getModelInfoFromPath(modelDirectory.path);
+await engine.loadModelFromPath(
+  modelDirectory.path,
+  modelId: 'My Qwen', // 不传则使用目录名称。
+);
+```
+
+存储访问权限和模型登记由宿主管理。元信息包含目录大小，但不校验引用文件。
+模型 ID 同时用于命名私有运行缓存；同名目录中的不同模型应指定不同的 ID，
+并使用合法的单级目录名称。
+
 ## 加载配置
 
 `loadModel()` 接受 `MnnLoadOptions`。未传入的字段使用下表默认值。
@@ -188,8 +204,9 @@ await engine.loadModel(
 ```
 
 `getMmapCache()` 和 `clearMmapCache()` 用于查看或删除已生成的 mmap 与 GPU
-运行时缓存。清理前必须卸载模型。传入 `modelId` 只处理单个已导入模型，
-省略则统计或清理全部模型。下次加载会重新生成缓存。
+运行时缓存。清理前必须卸载模型。传入 `modelId` 只处理单个模型的缓存，
+也可指定改名前的旧名称，不要求对应模型记录仍然存在；省略则处理全部缓存。
+下次加载会重新生成缓存。
 
 ```dart
 final cache = await engine.getMmapCache();

@@ -5,6 +5,7 @@ import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class MnnRuntimeCacheTest {
@@ -29,6 +30,22 @@ class MnnRuntimeCacheTest {
         } finally {
             root.deleteRecursively()
         }
+    }
+
+    @Test
+    fun clearsFormerModelNamesWithoutARegisteredModelAndRejectsEscapingIds() {
+        val root = Files.createTempDirectory("mnn-runtime-cache").toFile()
+        try {
+            val runtime = File(root, "runtime")
+            writeFile(File(runtime, "Old model/tmp/weights.bin"), 10)
+            writeFile(File(root, "source/llm.mnn.weight"), 7)
+            assertEquals(10, MnnRuntimeCache.clear(runtime, "Old model"))
+            assertEquals(0, MnnRuntimeCache.sizeBytes(runtime, "Old model"))
+            for (id in listOf("", ".", "..", "../source", "source/weights", "source\\weights")) {
+                assertFailsWith<IllegalArgumentException> { MnnRuntimeCache.clear(runtime, id) }
+            }
+            assertEquals(7, File(root, "source/llm.mnn.weight").length())
+        } finally { root.deleteRecursively() }
     }
 
     private fun writeFile(file: File, size: Int) {

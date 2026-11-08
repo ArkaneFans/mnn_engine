@@ -5,6 +5,7 @@ import com.arkanefans.mnn_engine.MnnEngineOperationException
 import com.arkanefans.mnn_engine.logging.MnnLogStore
 import com.arkanefans.mnn_engine.logging.MnnNativeDiagnostics
 import com.arkanefans.mnn_engine.model.MnnModelInfo
+import com.arkanefans.mnn_engine.model.MnnExternalModelInfo
 import com.arkanefans.mnn_engine.model.MnnTestDirectories
 import com.arkanefans.mnn_engine.model.MnnTestModelRepository
 import com.google.gson.JsonArray
@@ -55,12 +56,22 @@ class MnnRuntimeManager(
         backendCapabilitiesCache
     }
 
-    fun load(modelId: String, options: MnnLoadOptions = MnnLoadOptions()): MnnModelInfo {
+    fun load(
+        modelId: String,
+        options: MnnLoadOptions = MnnLoadOptions(),
+        directoryPath: String? = null,
+        displayName: String? = null,
+    ): MnnModelInfo {
         synchronized(lock) {
             if (generating.get()) throw GenerationBusyException()
-            val model = repository.find(modelId, activeModel?.modelId)
-                ?: throw IllegalArgumentException("Model not found: $modelId")
-            if (nativeSession != null && activeModel?.modelId == model.modelId && loadedOptions == options) {
+            val model = if (directoryPath == null) {
+                repository.find(modelId, activeModel?.modelId)
+                    ?: throw IllegalArgumentException("Model not found: $modelId")
+            } else {
+                MnnExternalModelInfo.read(directoryPath, modelId, displayName)
+            }
+            if (nativeSession != null && activeModel?.modelId == model.modelId &&
+                activeModel?.modelDirPath == model.modelDirPath && loadedOptions == options) {
                 logStore.debug("runtime", "Reusing loaded model ${model.modelId}")
                 return activeModel!!
             }
