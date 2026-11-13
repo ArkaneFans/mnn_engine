@@ -315,7 +315,7 @@ class MnnOpenAiServer(
             val reasoningParser = if (request.hasTools) {
                 null
             } else {
-                MnnReasoningOutputParser(MnnReasoningProfileDetector.detect(model))
+                MnnReasoningOutputParser(MnnReasoningProfileDetector.detect(model, request.thinkingEnabled))
             }
             try {
                 val metrics = generate(
@@ -391,6 +391,7 @@ class MnnOpenAiServer(
             try {
                 runtimeManager.generate(
                     messages, request.effectiveTools(), request.temperature, request.topP, request.maxTokens,
+                    thinkingEnabled = request.thinkingEnabled,
                     canGenerate = { gate.allows(requestId) },
                     onToken = { token ->
                         if (!gate.allows(requestId)) true else try {
@@ -465,7 +466,7 @@ class MnnOpenAiServer(
     ): MnnParsedCompletion {
         val reasoning = MnnReasoningOutputParser.parse(
             output,
-            MnnReasoningProfileDetector.detect(model),
+            MnnReasoningProfileDetector.detect(model, request.thinkingEnabled),
         )
         val parsed = if (request.hasTools) {
             parseTools(request, reasoning.content.orEmpty())

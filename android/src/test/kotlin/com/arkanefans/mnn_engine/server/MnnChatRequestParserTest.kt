@@ -3,9 +3,42 @@ package com.arkanefans.mnn_engine.server
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class MnnChatRequestParserTest {
+    @Test
+    fun parsesThinkingSwitchAndReasoningEffortAsBinaryControls() {
+        fun parse(fields: String) = MnnChatRequestParser.parse(
+            """{"messages":[{"role":"user","content":"hello"}],$fields}""",
+        )
+        assertEquals(false, parse(""""enable_thinking":false""").thinkingEnabled)
+        assertEquals(true, parse(""""enable_thinking":true""").thinkingEnabled)
+        assertEquals(false, parse(""""reasoning_effort":"none"""").thinkingEnabled)
+        for (effort in listOf("minimal", "low", "medium", "high", "xhigh", "max")) {
+            assertEquals(true, parse(""""reasoning_effort":"$effort"""").thinkingEnabled)
+        }
+        assertEquals(false, parse(""""enable_thinking":false,"reasoning_effort":"none"""").thinkingEnabled)
+        assertNull(parse(""""enable_thinking":null,"reasoning_effort":null""").thinkingEnabled)
+        assertNull(MnnChatRequestParser.parse("""{"messages":[{"role":"user","content":"hello"}]}""").thinkingEnabled)
+    }
+
+    @Test
+    fun rejectsInvalidAndConflictingThinkingControls() {
+        for (fields in listOf(
+            """"enable_thinking":"false"""",
+            """"enable_thinking":0""",
+            """"reasoning_effort":true""",
+            """"reasoning_effort":"unknown"""",
+            """"enable_thinking":true,"reasoning_effort":"none"""",
+            """"enable_thinking":false,"reasoning_effort":"high"""",
+        )) {
+            assertFailsWith<IllegalArgumentException> {
+                MnnChatRequestParser.parse("""{"messages":[{"role":"user","content":"hello"}],$fields}""")
+            }
+        }
+    }
+
     @Test
     fun parsesSupportedChatParameters() {
         val request = MnnChatRequestParser.parse(

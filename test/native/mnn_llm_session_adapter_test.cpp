@@ -217,6 +217,38 @@ int main() {
             ++cases;
         }
         {
+            for (const std::string baseContext : {R"({"custom":"keep"})",
+                    R"({"custom":"keep","enable_thinking":false})",
+                    R"({"custom":"keep","enable_thinking":true})"}) {
+                fakeLlm = {};
+                fakeLlm.modelConfig = "{\"jinja\":{\"context\":" + baseContext + "}}";
+                MnnLlmSessionAdapter adapter("config.json", "{}");
+                load(adapter);
+                const auto defaults = nlohmann::json::parse(baseContext);
+                for (bool enabled : {false, true}) {
+                    nlohmann::json request = {{"jinja", {{"context", {
+                        {"enable_thinking", enabled}, {"tools", nlohmann::json::array({"clock"})}
+                    }}}}};
+                    adapter.generate(messages, request.dump(), 1, [](const auto&) { return true; });
+                    auto context = nlohmann::json::parse(fakeLlm.effectiveConfig)["jinja"]["context"];
+                    require(context["enable_thinking"] == enabled && context["custom"] == "keep" &&
+                                context["tools"].size() == 1, "Thinking override must retain model variables and tools");
+                    adapter.reset();
+                    adapter.generate(messages, R"({"jinja":{"context":{"tools":[]}}})", 1,
+                            [](const auto&) { return false; });
+                    context = nlohmann::json::parse(fakeLlm.effectiveConfig)["jinja"]["context"];
+                    require(context.value("custom", "") == "keep" && context["tools"].empty() &&
+                                context.contains("enable_thinking") == defaults.contains("enable_thinking"),
+                            "An omitted thinking flag must restore its original presence after cancellation");
+                    if (defaults.contains("enable_thinking")) {
+                        require(context["enable_thinking"] == defaults["enable_thinking"],
+                                "An omitted thinking flag must restore the loaded model default");
+                    }
+                }
+            }
+            ++cases;
+        }
+        {
             const std::vector<std::tuple<std::string, std::string, int>> configs = {
                 {"{}", "{}", 128},
                 {R"({"attention_mask":"float"})", "{}", 128},

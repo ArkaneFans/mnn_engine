@@ -278,6 +278,13 @@ bool MnnLlmSessionAdapter::load(std::string* errorMessage) {
         }
         return false;
     }
+    const auto loadedConfig = json::parse(llm_->dump_config());
+    if (loadedConfig.contains("jinja") && loadedConfig["jinja"].is_object() &&
+        loadedConfig["jinja"].contains("context") && loadedConfig["jinja"]["context"].is_object()) {
+        baseTemplateContext_ = loadedConfig["jinja"]["context"].dump();
+    } else {
+        baseTemplateContext_ = "{}";
+    }
     return true;
 }
 
@@ -289,7 +296,16 @@ MnnLlmSessionAdapter::Metrics MnnLlmSessionAdapter::generate(
     std::lock_guard<std::mutex> lock(generationMutex_);
     clearMnnNativeDiagnostics();
     if (llm_ == nullptr) throw std::runtime_error("Model is not loaded");
-    if (!requestConfigJson.empty() && !llm_->set_config(requestConfigJson)) {
+    auto requestConfig = requestConfigJson.empty() ? json::object() : json::parse(requestConfigJson);
+    auto templateContext = json::parse(baseTemplateContext_);
+    if (requestConfig.contains("jinja") && requestConfig["jinja"].is_object() &&
+        requestConfig["jinja"].contains("context") && requestConfig["jinja"]["context"].is_object()) {
+        templateContext.update(requestConfig["jinja"]["context"]);
+    }
+    requestConfig["jinja"]["context"] = std::move(templateContext);
+    // MNN recursively merges objects. Clear the old context before replacing
+    // it so an omitted flag regains its model default, including absent keys.
+    if (!llm_->set_config(R"({"jinja":{"context":null}})") || !llm_->set_config(requestConfig.dump())) {
         throw std::invalid_argument("MNN rejected request config");
     }
     if (maxTokens < kNoTokenLimit) {

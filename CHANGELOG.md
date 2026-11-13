@@ -1,5 +1,6 @@
 ## 0.2.2
 
+- Add per-request thinking switches to streaming and non-streaming chat completions: `enable_thinking`, or `reasoning_effort` mapped to on/off. Restore the loaded model's template defaults for subsequent requests, retain tool context, and reject conflicting controls.
 - Upgrade the pinned MNN source and bundled Android arm64 libraries to 3.6.2.
 - Adapt prefill cancellation to the updated multimodal position handling, including relative spatial positions and four-axis mRoPE. Retain the MTOK added-token compatibility fix.
 - Patch-based Qwen vision processors now use source image dimensions by default. Set `image_max_pixels` in the model configuration to bound vision work; legacy `image_size` metadata alone does not provide this limit.

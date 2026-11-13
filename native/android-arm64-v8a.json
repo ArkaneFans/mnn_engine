@@ -32,7 +32,7 @@
       "MNN_BUILD_TEST=OFF",
       "MNN_BUILD_BENCHMARK=OFF"
     ],
-    "fingerprint": "af77a7098d067ec0a6cc0cd1",
+    "fingerprint": "dc1411d1ada8fbda03cde202",
     "mnnFingerprint": "bc316828c1ebd9361322e060",
     "nativeAdapterAbiVersion": 8
   },
@@ -43,9 +43,9 @@
       "sizeBytes": 10196680
     },
     "libmnn_engine_jni.so": {
-      "buildId": "6d79c03b90ed2496858374d61a7fa03001814da9",
-      "sha256": "319145f41f389140d9586088475e658f40a9c48fe3fa30cc25c334893013571d",
-      "sizeBytes": 417392
+      "buildId": "18212e833ee2e73ff647492e1d67fb291882afa1",
+      "sha256": "67bb6747054b74fd93a308d3079c158e1a1b27751f03a65ccf715897a4e37fef",
+      "sizeBytes": 420056
     }
   },
   "runtime": {

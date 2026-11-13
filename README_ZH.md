@@ -269,6 +269,17 @@ curl http://127.0.0.1:8081/v1/chat/completions \
 `max_tokens` 可选。省略或设为 `-1` 时，模型会持续生成，直到输出结束标记或
 运行时达到上下文容量上限。也支持 `max_completion_tokens` 和 `n_predict` 别名。
 
+每次请求可用 `enable_thinking: true/false` 控制思考开关。OpenAI 客户端也可使用
+`reasoning_effort: "none"` 关闭；`minimal`、`low`、`medium`、`high`、`xhigh`、
+`max` 均表示开启，行为相同，暂不区分深度或提供独立思考 token 预算。
+两个字段矛盾或类型／取值无效时返回 HTTP 400（`invalid_request`）。省略两个字段
+或设为 `null`，该请求使用已加载模型的默认设置。
+
+开关同时适用于流式、非流式和带工具的请求，通过 MNN 的
+`jinja.context.enable_thinking` 生效，要求模型模板支持该变量。每次请求保留
+模型自有模板变量，并使用本次工具上下文；开关覆盖不影响下一次请求，也不修改
+模型文件。输出 token 上限仍同时包含思考和正文。
+
 使用 `MnnServerBindMode.allInterfaces` 时 Server 会监听 `0.0.0.0`，能够通过
 Wi-Fi、热点、VPN 等 IPv4 接口访问。除非设备处于可信网络，否则应始终配置 API Key。
 

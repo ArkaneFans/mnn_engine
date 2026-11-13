@@ -52,7 +52,7 @@ public:
     static Llm* createLLM(const std::string&) { return new Llm; }
     static void destroy(Llm* llm) { delete llm; }
     bool set_config(const std::string& config) {
-        config_.update(nlohmann::json::parse(config));
+        mergeConfig(config_, nlohmann::json::parse(config));
         fakeLlm.effectiveConfig = config_.dump();
         return true;
     }
@@ -101,6 +101,17 @@ public:
         if (fakeLlm.emitEndMarker) *output_ << endMarker_ << std::flush;
     }
 private:
+    static void mergeConfig(nlohmann::json& target, const nlohmann::json& source) {
+        if (!target.is_object() || !source.is_object()) return;
+        for (auto it = source.begin(); it != source.end(); ++it) {
+            if (target.contains(it.key()) && target[it.key()].is_object() && it.value().is_object()) {
+                mergeConfig(target[it.key()], it.value());
+            } else {
+                target[it.key()] = it.value();
+            }
+        }
+    }
+
     bool cancelPrefill() { return mnn_engine::cancelPrefill(&context_); }
     nlohmann::json config_ = nlohmann::json::parse(fakeLlm.modelConfig);
     LlmContext context_;

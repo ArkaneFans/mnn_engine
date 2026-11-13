@@ -147,6 +147,7 @@ class MnnRuntimeManager(
         temperature: Double?,
         topP: Double?,
         maxTokens: Int,
+        thinkingEnabled: Boolean? = null,
         canGenerate: () -> Boolean = { true },
         onToken: (String) -> Boolean,
     ): GenerationResult {
@@ -184,6 +185,10 @@ class MnnRuntimeManager(
             val jinja = config.getAsJsonObject("jinja") ?: JsonObject().also { config.add("jinja", it) }
             val context = jinja.getAsJsonObject("context") ?: JsonObject().also { jinja.add("context", it) }
             context.add("tools", tools.deepCopy())
+            // Native owns the merged, loaded template default. Only send an
+            // explicit request override so defaults from llm_config stay intact.
+            context.remove("enable_thinking")
+            thinkingEnabled?.let { context.addProperty("enable_thinking", it) }
             val metrics = session.generate(
                 Gson().toJson(messages),
                 config.toString(),

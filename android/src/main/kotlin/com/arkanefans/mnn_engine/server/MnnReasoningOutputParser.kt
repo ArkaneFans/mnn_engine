@@ -47,7 +47,7 @@ internal data class MnnReasoningResult(
  * non-thinking models.
  */
 internal object MnnReasoningProfileDetector {
-    fun detect(model: MnnModelInfo): MnnReasoningProfile {
+    fun detect(model: MnnModelInfo, thinkingEnabled: Boolean? = null): MnnReasoningProfile {
         val configFile = File(model.configPath)
         val config = readJson(configFile) ?: return MnnReasoningProfile.PLAIN
         val modelDir = configFile.parentFile ?: return MnnReasoningProfile.PLAIN
@@ -57,13 +57,14 @@ internal object MnnReasoningProfileDetector {
             ?: llmConfig?.stringValue("context_file")
             ?: DEFAULT_CONTEXT_FILE
         val context = readJson(File(modelDir, contextPath))
-        return detect(config, llmConfig, context)
+        return detect(config, llmConfig, context, thinkingEnabled)
     }
 
     internal fun detect(
         config: JsonObject,
         llmConfig: JsonObject?,
         context: JsonObject? = null,
+        thinkingEnabled: Boolean? = null,
     ): MnnReasoningProfile {
         val template = config.chatTemplate() ?: llmConfig?.chatTemplate().orEmpty()
         val hasOpenTag = template.contains(OPEN)
@@ -73,7 +74,7 @@ internal object MnnReasoningProfileDetector {
         // The runtime re-applies config.json for every request, while
         // context.json is merged during model load. Mirror that effective
         // precedence so the protocol parser agrees with the native template.
-        val explicitThinking = config.enableThinking()
+        val explicitThinking = thinkingEnabled ?: config.enableThinking()
             ?: context?.booleanValue("enable_thinking")
             ?: llmConfig?.enableThinking()
         if (explicitThinking != null) {

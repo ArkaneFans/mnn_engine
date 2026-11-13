@@ -9,12 +9,14 @@ import com.arkanefans.mnn_engine.runtime.MnnRuntimeManager
 import com.google.gson.JsonPrimitive
 import org.mockito.Mockito
 import java.io.BufferedInputStream
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.URL
 import java.nio.file.Files
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -29,6 +31,43 @@ import kotlin.test.assertTrue
 
 /** Real CIO sockets, with only the synchronous native call replaced by latches. */
 class MnnOpenAiServerCancellationTest {
+    @Test
+    fun thinkingSwitchAlsoSelectsTheCorrectOpenAiOutputFieldWithAndWithoutTools() {
+        Fixture(thinkingTemplate = true).use { f ->
+            f.allowReturn.countDown()
+            assertEquals(200, f.post().first)
+            for (stream in listOf(false, true)) {
+                for (hasTools in listOf(false, true)) {
+                    val disabled = f.post(stream = stream, hasTools = hasTools, extraFields = """"enable_thinking":false""")
+                    assertEquals(200, disabled.first)
+                    assertTrue(disabled.second.contains("\"content\":\"ok\""))
+                    assertFalse(disabled.second.contains("reasoning_content"))
+                    val enabled = f.post(stream = stream, hasTools = hasTools, extraFields = """"enable_thinking":true""")
+                    assertEquals(200, enabled.first)
+                    assertTrue(enabled.second.contains("\"reasoning_content\":\"ok\""))
+                    assertFalse(enabled.second.contains("\"content\":\"ok\""))
+                }
+            }
+        }
+    }
+
+    @Test
+    fun thinkingSwitchReachesRuntimeInBothResponseModesAndConflictsReturn400() {
+        Fixture().use { f ->
+            f.allowReturn.countDown()
+            for (stream in listOf(false, true)) {
+                assertEquals(200, f.post(stream = stream, extraFields = """"enable_thinking":false""").first)
+                assertEquals(200, f.post(stream = stream, extraFields = """"reasoning_effort":"high"""").first)
+                assertEquals(200, f.post(stream = stream).first)
+            }
+            assertEquals(listOf(false, true, null, false, true, null), f.thinkingControls)
+            val invalid = f.post(extraFields = """"enable_thinking":true,"reasoning_effort":"none"""")
+            assertEquals(400, invalid.first)
+            assertTrue(invalid.second.contains("invalid_request"))
+            assertEquals(6, f.generations.get())
+        }
+    }
+
     @Test
     fun servesTheHostModelIdEvenWhenTheSourceDirectoryHasAnotherName() {
         val id = "Qwen3.5-0.8B-MNN"
@@ -200,6 +239,7 @@ class MnnOpenAiServerCancellationTest {
         modelId: String = "qwen",
         displayName: String = "Qwen",
         modelDirPath: String = "unused",
+        thinkingTemplate: Boolean = false,
     ) : AutoCloseable {
         private val directory = Files.createTempDirectory("mnn-http-cancel").toFile()
         val started = CountDownLatch(1)
@@ -208,10 +248,16 @@ class MnnOpenAiServerCancellationTest {
         val returned = CountDownLatch(1)
         val generations = AtomicInteger()
         val cancellations = AtomicInteger()
+        val thinkingControls = CopyOnWriteArrayList<Boolean?>()
         val executor = Executors.newSingleThreadExecutor()
+        private val configPath = if (thinkingTemplate) {
+            File(directory, "thinking-config.json").apply {
+                writeText("""{"jinja":{"context":{"enable_thinking":true},"chat_template":"assistant: <think>"}}""")
+            }.absolutePath
+        } else "$modelDirPath/config.json"
         private val model = MnnModelInfo(
             modelId = modelId, modelKey = modelId, displayName = displayName, vendor = null,
-            modelDirPath = modelDirPath, configPath = "$modelDirPath/config.json", sizeBytes = 0,
+            modelDirPath = modelDirPath, configPath = configPath, sizeBytes = 0,
             importedAt = 0, isActive = true, backend = "cpu", supportsToolCalling = true,
         )
         private val runtime = Mockito.mock(MnnRuntimeManager::class.java) { invocation ->
@@ -223,7 +269,8 @@ class MnnOpenAiServerCancellationTest {
                     null
                 }
                 "generate" -> {
-                    val onToken = invocation.getArgument<(String) -> Boolean>(6)
+                    thinkingControls.add(invocation.getArgument<Boolean?>(5))
+                    val onToken = invocation.getArgument<(String) -> Boolean>(7)
                     if (generations.incrementAndGet() == 1) {
                         started.countDown()
                         try {
@@ -271,7 +318,7 @@ class MnnOpenAiServerCancellationTest {
             }
         }
 
-        fun post(stream: Boolean = false, requestedModel: String? = null): Pair<Int, String> {
+        fun post(stream: Boolean = false, requestedModel: String? = null, extraFields: String = "", hasTools: Boolean = false): Pair<Int, String> {
             val connection = URL("http://127.0.0.1:$port/v1/chat/completions").openConnection() as HttpURLConnection
             try {
                 connection.requestMethod = "POST"
@@ -280,8 +327,10 @@ class MnnOpenAiServerCancellationTest {
                 connection.doOutput = true
                 connection.setRequestProperty("Content-Type", "application/json")
                 val modelField = requestedModel?.let { "\"model\":${JsonPrimitive(it)}," }.orEmpty()
+                val extras = extraFields.takeIf { it.isNotEmpty() }?.let { ",$it" }.orEmpty()
+                val tools = if (hasTools) """, "tools":[{"type":"function","function":{"name":"clock","parameters":{"type":"object"}}}]""" else ""
                 connection.outputStream.use {
-                    it.write("""{$modelField"messages":[{"role":"user","content":"hello"}],"stream":$stream}""".toByteArray())
+                    it.write("""{$modelField"messages":[{"role":"user","content":"hello"}],"stream":$stream$extras$tools}""".toByteArray())
                 }
                 val status = connection.responseCode
                 return status to (if (status >= 400) connection.errorStream else connection.inputStream)

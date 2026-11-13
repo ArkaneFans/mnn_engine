@@ -288,6 +288,19 @@ curl http://127.0.0.1:8081/v1/chat/completions \
 until the model emits an end token or the runtime reaches its context limit.
 `max_completion_tokens` and `n_predict` are accepted as aliases.
 
+Thinking can be controlled per request with `enable_thinking: true` or `false`.
+For OpenAI clients, `reasoning_effort: "none"` disables thinking; `minimal`, `low`,
+`medium`, `high`, `xhigh`, and `max` enable it with the same behavior. These values
+do not select different depths or thinking-token budgets. Conflicting controls
+or invalid types/values return HTTP 400 (`invalid_request`). Omitting both fields
+or setting them to `null` uses the loaded model's default for that request.
+
+The switch applies to streaming and non-streaming responses, including requests
+with tools. It uses MNN's `jinja.context.enable_thinking`, so the model's template
+must support that variable. Requests retain model template variables and receive
+a fresh tools context; an override does not carry into the next request or change
+the model files. Total output limits still include thinking and answer tokens.
+
 Use `MnnServerBindMode.allInterfaces` to listen on `0.0.0.0`. This makes the
 server reachable through Wi-Fi, hotspots, VPNs, and other IPv4 interfaces.
 Always configure an API key unless the device is on a trusted network.

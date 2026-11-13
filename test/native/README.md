@@ -8,7 +8,8 @@ bash scripts/test_mnn_tokenizer.sh "$PWD"
 ```
 
 The first command checks the model-format guard, incremental generation,
-prefill cancellation and reuse, model chunk defaults, failure handling, bounded
+prefill cancellation and reuse, per-request thinking overrides and model defaults,
+model chunk defaults, failure handling, bounded
 native log storage, and the real MNN log macros with Android logging suppressed.
 LLM execution is stubbed; this does not measure
 device inference or GPU/NPU numerical accuracy.
