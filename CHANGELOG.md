@@ -1,3 +1,9 @@
+## 0.2.2
+
+- Upgrade the pinned MNN source and bundled Android arm64 libraries to 3.6.2.
+- Adapt prefill cancellation to the updated multimodal position handling, including relative spatial positions and four-axis mRoPE. Retain the MTOK added-token compatibility fix.
+- Patch-based Qwen vision processors now use source image dimensions by default. Set `image_max_pixels` in the model configuration to bound vision work; legacy `image_size` metadata alone does not provide this limit.
+
 ## 0.2.1
 
 - Add `loadModelFromPath` to load external MNN directories without copying, with optional host-defined model IDs and display names. Storage access and registration remain the host's responsibility.

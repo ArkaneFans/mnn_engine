@@ -9,8 +9,8 @@ SHA-256 digests for the bundled artifacts.
 ## Alibaba MNN
 
 - Project: [Alibaba MNN](https://github.com/alibaba/MNN)
-- Version: 3.6.1
-- Commit: `d407447ed56c4121a11ccbd266dc184ca1ead0c2`
+- Version: 3.6.2
+- Commit: `7e3c6fb5225d3ccf22807ee641332669df34650d`
 - Copyright: Copyright 2018 Alibaba Group
 - License: Apache License 2.0
 

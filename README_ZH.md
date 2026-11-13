@@ -40,7 +40,7 @@ CMake、Android NDK、Linux 或 WSL。
 | Android 最低版本 | API 28 |
 | 插件 Compile SDK | 35 |
 | Flutter | 3.35.0 或更高版本 |
-| MNN | 3.6.1，commit `d407447ed56c4121a11ccbd266dc184ca1ead0c2` |
+| MNN | 3.6.2，commit `7e3c6fb5225d3ccf22807ee641332669df34650d` |
 | 推理后端 | CPU（默认）、OpenCL、Vulkan buffer；可选 Hexagon |
 | 活跃模型 | 同一时间一个 |
 | 并发生成 | 同一时间一个 |

@@ -12,8 +12,8 @@ pub.dev 安装插件后会直接使用已经打包好的库，不需要安装这
 - CMake `3.22.1`、Ninja、Python 3 和 C/C++ 编译工具
 - ARM64 Android 目标（`arm64-v8a`）
 
-插件基于 MNN 3.6.1，固定 commit 为
-`d407447ed56c4121a11ccbd266dc184ca1ead0c2`。
+插件基于 MNN 3.6.2，固定 commit 为
+`7e3c6fb5225d3ccf22807ee641332669df34650d`。
 
 默认构建 CPU、`MNN_OPENCL`、`MNN_VULKAN`，设置 `MNN_VULKAN_IMAGE=OFF`，
 使用适合 LLM 的 Vulkan buffer 算子；`MNN_HEXAGON=OFF`。
@@ -32,7 +32,7 @@ INFO 记录模型/服务生命周期和生成完成；请求时序、MNN 内部 
 
 通用构建还要求 `MNN_ENGINE_TOKENIZER_ADDED_TOKENS=ON`。
 `scripts/cmake/mnn_tokenizer_compat.cmake` 在构建目录的源码副本中修复
-MNN 3.6.1 单 token MTOK 解码，保留 `</think>`、`<tool_call>` 等 added tokens。
+MNN 3.6.2 单 token MTOK 解码，保留 `</think>`、`<tool_call>` 等 added tokens。
 子模块仍然干净，但正式 libMNN 包含该兼容补丁；补丁脚本纳入构建指纹，
 上游函数不再匹配时会明确停止配置。MNN/JNI 一起重编并打包后运行
 `bash scripts/test_mnn_tokenizer.sh "$PWD"`；WSL 可用 `MNN_BUILD_JOBS=4` 控制内存。
@@ -40,7 +40,8 @@ MNN 3.6.1 单 token MTOK 解码，保留 `</think>`、`<tool_call>` 等 added to
 通用构建还要求 `MNN_ENGINE_PREFILL_CANCELLATION=ON`。
 `scripts/cmake/mnn_prefill_compat.cmake` 在构建目录的源码副本中为 MNN 原有分段
 循环增加取消检查，保留完整 prompt 计数，并使多模态位置编码、deep-stack 张量
-与 embedding 的分段一致。图像/音频先完整编码，编码器的单次调用不能中断。
+与 embedding 的分段一致。位置编码保留模型的相对空间轴规则，支持四轴 mRoPE。
+图像/音频先完整编码，编码器的单次调用不能中断。
 线程局部的 C 回调只读取 adapter 的原子取消标记，MNN 状态只由生成线程修改。
 请求准备和取消在 runtime 的同一把锁下协调，native 入口不会清掉刚收到的停止信号。
 正常取消保留模型，下一请求重置未完成的 KV 状态；兼容源码和回调导出均纳入构建
@@ -49,6 +50,11 @@ MNN 3.6.1 单 token MTOK 解码，保留 `</think>`、`<tool_call>` 等 added to
 默认分段大小由 adapter 在读取 MNN 合并后的模型元数据后决定：浮点因果 mask
 使用 128 token，旧式 GLM/整数 mask 保留原有整段 prefill；显式 `chunk` 和
 `chunk_limits` 配置保持有效。
+
+MNN 3.6.2 的 Qwen patch 视觉处理器默认使用原图尺寸，除非调用方显式覆盖尺寸；
+旧模型的 `image_size` 元数据本身不能限制这部分计算量。需要限制视觉输入时，可在
+模型配置中设置 `image_max_pixels`。CPU 图像回归使用单独的配置，设置
+`image_max_pixels=176400`；它不修改原模型，也不代表完整分辨率图片的性能验证。
 
 8 Elite 上已跑通官方 CLI 和应用的 W4/C4 Qwen3-0.6B 短对话，非 C4 Attention
 会在模型加载前明确拒绝。长输入答案质量尚未通过，其他官方后端/配置也可复现

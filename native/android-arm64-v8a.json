@@ -32,20 +32,20 @@
       "MNN_BUILD_TEST=OFF",
       "MNN_BUILD_BENCHMARK=OFF"
     ],
-    "fingerprint": "c3821cd66a849e5ac60a9ed2",
-    "mnnFingerprint": "929117dbf6247e2e4773688e",
+    "fingerprint": "af77a7098d067ec0a6cc0cd1",
+    "mnnFingerprint": "bc316828c1ebd9361322e060",
     "nativeAdapterAbiVersion": 8
   },
   "libraries": {
     "libMNN.so": {
-      "buildId": "c5970cdcd7684424e836347d993741bdce459f8c",
-      "sha256": "68521c54ec460bc460834738f0a347fc5dba48783d517497c676c408357a5aaa",
-      "sizeBytes": 9406232
+      "buildId": "640cdea969125d2601f0d054bf41d16c90323409",
+      "sha256": "1b3ec0592eb2484a7002f8475459ef5b495b6c1991556f8158bf199734ba3cde",
+      "sizeBytes": 10196680
     },
     "libmnn_engine_jni.so": {
-      "buildId": "c86cc8b67df7e27f4cf33dba67a85e279c9060b8",
-      "sha256": "c3378b393d6985e7e5e6513a45a5988d05d46b190c61e14f4f9e6e2476e508b4",
-      "sizeBytes": 415040
+      "buildId": "6d79c03b90ed2496858374d61a7fa03001814da9",
+      "sha256": "319145f41f389140d9586088475e658f40a9c48fe3fa30cc25c334893013571d",
+      "sizeBytes": 417392
     }
   },
   "runtime": {
@@ -61,9 +61,9 @@
   },
   "schemaVersion": 1,
   "source": {
-    "mnnCommit": "d407447ed56c4121a11ccbd266dc184ca1ead0c2",
+    "mnnCommit": "7e3c6fb5225d3ccf22807ee641332669df34650d",
     "mnnRepository": "https://github.com/alibaba/MNN",
-    "mnnVersion": "3.6.1"
+    "mnnVersion": "3.6.2"
   },
   "target": {
     "abi": "arm64-v8a",

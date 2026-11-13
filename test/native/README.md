@@ -13,6 +13,13 @@ native log storage, and the real MNN log macros with Android logging suppressed.
 LLM execution is stubbed; this does not measure
 device inference or GPU/NPU numerical accuracy.
 
+It also runs `scripts/test_mnn_prefill_positions.sh`, which compiles the actual
+generated multimodal position loop with array inputs. Three/four-axis mRoPE,
+relative spatial axes, chunk offsets with existing history, and missing-axis
+fallbacks must match full-prefill positions.
+The adapter stubs cannot exercise this upstream loop; the position cases also
+reject the unpatched MNN 3.6.2 loop, so they cover a distinct integration gap.
+
 The tokenizer test builds the upstream tokenizer with the same compatibility
 patch used in `libMNN.so`, then checks single-token decoding against a generated
 MTOK fixture, including thinking/tool markers and Unicode added tokens. It does
@@ -50,9 +57,17 @@ The default compares `chunk=0` against `chunk=128`. `--chunked-only` instead
 uses `chunk=128` for both the reference and subsequent requests: it still
 requires identical repeated output and identical output after each cancellation.
 This separates cancellation/reuse checks from numerical changes caused by
-different prefill shapes. Use a model copy with high precision for a stricter
-CPU comparison across chunk sizes; low precision or GPU execution need not
-produce the same greedy tokens across those sizes.
+different prefill shapes. Use a model copy with high precision and normal memory
+for a stricter CPU comparison across chunk sizes. High precision alone does not
+guarantee matching tokens with low-memory quantized execution; low precision or
+GPU execution also need not produce the same greedy tokens across those sizes.
+
+With MNN 3.6.2, patch-based Qwen vision processors use the source image dimensions
+by default. For a bounded regression, use a separate model configuration with
+`image_max_pixels`, for example `176400`, and disable thinking before loading
+when checking the image answer. Legacy `image_size` metadata alone does not
+provide a pixel limit. Keep the same pixel budget for every comparison and
+leave the original model configuration unchanged.
 
 See [the SM8475 device report](../../doc/PREFILL_CANCELLATION_DEVICE_ACCEPTANCE_ZH.md)
 for results, reproduction commands, and the unresolved OpenCL low-precision

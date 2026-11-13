@@ -1,4 +1,4 @@
-# MNN 3.6.1's PipelineTokenizer::decode(int) misses added_tokens_ outside the
+# MNN 3.6.2's PipelineTokenizer::decode(int) misses added_tokens_ outside the
 # base vocabulary. Keep the pinned checkout intact and patch a build copy.
 function(mnn_engine_prepare_tokenizer source_path output_path)
     file(READ "${source_path}" tokenizer_source)

@@ -43,7 +43,7 @@ Host apps do not need MNN source, CMake, the Android NDK, Linux, or WSL.
 | Minimum Android version | API 28 |
 | Compile SDK used by the plugin | 35 |
 | Flutter | 3.35.0 or newer |
-| MNN | 3.6.1 at commit `d407447ed56c4121a11ccbd266dc184ca1ead0c2` |
+| MNN | 3.6.2 at commit `7e3c6fb5225d3ccf22807ee641332669df34650d` |
 | Inference backend | CPU (default), OpenCL, Vulkan buffer; optional Hexagon |
 | Active models | One at a time |
 | Concurrent generations | One at a time |

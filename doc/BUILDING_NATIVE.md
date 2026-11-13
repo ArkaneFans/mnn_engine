@@ -13,8 +13,8 @@ libraries and do not need this toolchain.
 - CMake `3.22.1`, Ninja, Python 3, and a C/C++ build toolchain
 - An ARM64 Android target (`arm64-v8a`)
 
-The plugin is built against MNN 3.6.1 at commit
-`d407447ed56c4121a11ccbd266dc184ca1ead0c2`.
+The plugin is built against MNN 3.6.2 at commit
+`7e3c6fb5225d3ccf22807ee641332669df34650d`.
 
 The default build enables CPU, `MNN_OPENCL` and `MNN_VULKAN`, with
 `MNN_VULKAN_IMAGE=OFF` for LLM buffer operators and `MNN_HEXAGON=OFF`.
@@ -36,7 +36,7 @@ request timing and internal MNN INFO details use DEBUG, while native warning and
 error priorities are preserved. Successful requests do not dump native context.
 
 The common build also requires `MNN_ENGINE_TOKENIZER_ADDED_TOKENS=ON`.
-`scripts/cmake/mnn_tokenizer_compat.cmake` fixes MNN 3.6.1's single-token MTOK
+`scripts/cmake/mnn_tokenizer_compat.cmake` fixes MNN 3.6.2's single-token MTOK
 decode in a generated build copy, preserving added tokens such as `</think>`
 and `<tool_call>`. The pinned submodule is unchanged, but the shipped libMNN
 includes this compatibility patch. Its source is fingerprinted; unexpected
@@ -48,7 +48,8 @@ and JNI together, then run `bash scripts/test_mnn_tokenizer.sh "$PWD"`.
 in `scripts/cmake/mnn_prefill_compat.cmake` adds cancellation checks to MNN's
 existing chunk loops, keeps full prompt counts, and slices multimodal position
 IDs and deep-stack tensors consistently with their embeddings. Images/audio are
-encoded before chunking; an encoder call itself cannot be interrupted. A
+encoded before chunking; spatial axes retain the model's relative-position
+rules, including four-axis mRoPE. An encoder call itself cannot be interrupted. A
 thread-local C callback reads the adapter's atomic cancellation flag, so only
 the generation thread changes MNN state. The runtime prepares each request under
 the same lock as cancellation; native entry never clears a newly received stop.
@@ -59,6 +60,13 @@ for regression commands, including an optional real-model CPU check.
 The adapter chooses the default chunk size after reading MNN's merged model
 metadata: floating causal masks use 128 tokens; legacy GLM/integer masks keep
 the upstream full-prefill default. Explicit `chunk`/`chunk_limits` remain intact.
+
+MNN 3.6.2's patch-based Qwen vision processors use source image dimensions unless
+the caller explicitly overrides the dimensions. Legacy `image_size` metadata
+alone does not bound that work. Set `image_max_pixels` in the model configuration
+when a bounded vision input is needed. The CPU image regression uses a separate
+configuration with `image_max_pixels=176400`; it does not change the original
+model or establish performance for full-resolution images.
 
 On the tested 8 Elite, W4/C4 Qwen3-0.6B short conversations now work in both
 official CLI and the app; non-C4 Attention is rejected before model loading.
