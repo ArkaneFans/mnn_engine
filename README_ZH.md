@@ -280,6 +280,27 @@ curl http://127.0.0.1:8081/v1/chat/completions \
 模型自有模板变量，并使用本次工具上下文；开关覆盖不影响下一次请求，也不修改
 模型文件。输出 token 上限仍同时包含思考和正文。
 
+默认启用跨请求 KV 复用，每次请求仍需提交完整 `messages`。驻留 session 直接
+使用 MNN 官方的 `prompt_cache` 和 `syncPromptCache()`：比较去掉思考块后的
+历史文本，保留已有模型状态，只计算新增输入。Qwen3.5 模板即使省略旧轮次的
+思考块，含线性 Attention 的模型也能延续普通追加对话。
+设置 `"cache_prompt": false` 可清空缓存，并让本次请求完整计算；下一次请求
+恢复默认缓存策略，但不会复用这次关闭缓存的请求。
+
+非流式响应的 `usage.prompt_tokens` 仍统计完整输入，
+`usage.prompt_tokens_details.cached_tokens` 报告复用数量；流式与非流式请求的
+完成日志均记录输入及缓存 token 数。缓存仅属于当前单个驻留 session，没有
+conversation ID、磁盘快照或多对话缓存池。与官方应用一样，模型状态仍可能
+包含渲染历史中省略的旧思考内容，因此复用结果不保证与完整历史从头计算一致。
+规范化历史发生编辑或裁剪时，沿用 MNN 的完整 prefill 回退。
+
+推理开始前取消会保留原缓存。decode 中取消时，调用官方 `eraseHistory()`
+恢复已完成的 prompt，并同步不含部分回复的请求历史；线性 Attention 由 MNN
+重新 prefill 保留的历史以重建状态。增量 prefill 中途取消时，能够验证原状态
+就恢复上一份完整对话；首次 prefill 尚未完成时不建立完整历史缓存。回退排除
+已入队但没有 KV 的 token。不一致的状态、卸载模型和原生失败会使缓存失效。
+媒体输入、token 压缩、推测解码和不支持的注意力布局完整计算。
+
 使用 `MnnServerBindMode.allInterfaces` 时 Server 会监听 `0.0.0.0`，能够通过
 Wi-Fi、热点、VPN 等 IPv4 接口访问。除非设备处于可信网络，否则应始终配置 API Key。
 

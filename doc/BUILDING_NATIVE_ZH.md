@@ -20,7 +20,7 @@ pub.dev 安装插件后会直接使用已经打包好的库，不需要安装这
 Hexagon 保留开发实现，但 ServLlama 不开放入口。需显式设置 `MNN_HEXAGON=ON`
 编译主机后端，并打包下面的 SDK 产物，才能进行 DSP 推理测试。
 
-当前 native adapter ABI 为 **8**，通用构建同时要求
+当前 native adapter ABI 为 **9**，通用构建同时要求
 `MNN_USE_LOGCAT=ON` 和 `MNN_ENGINE_LOG_BRIDGE=ON`。插件自有的
 `scripts/cmake/mnn_log_bridge.cmake` 通过 `CMAKE_PROJECT_MNN_INCLUDE` 和
 `--wrap=__android_log_print` 向 libMNN 加入直接日志桥，不改上游子模块。
@@ -44,7 +44,10 @@ MNN 3.6.2 单 token MTOK 解码，保留 `</think>`、`<tool_call>` 等 added to
 图像/音频先完整编码，编码器的单次调用不能中断。
 线程局部的 C 回调只读取 adapter 的原子取消标记，MNN 状态只由生成线程修改。
 请求准备和取消在 runtime 的同一把锁下协调，native 入口不会清掉刚收到的停止信号。
-正常取消保留模型，下一请求重置未完成的 KV 状态；兼容源码和回调导出均纳入构建
+正常取消保留模型，并调用官方 `eraseHistory()` 回退历史；线性 Attention 由 MNN
+重放保留的历史以重建状态。只有完整 prompt/对话状态才同步官方 `syncPromptCache()`，
+回退排除没有 KV 的入队 token，已提交长度与序列长度不一致时重置缓存。
+兼容源码和回调导出均纳入构建
 指纹与产物验证。回归命令及可选的真实模型 CPU 检查见
 [native 测试说明](../test/native/README.md)。
 默认分段大小由 adapter 在读取 MNN 合并后的模型元数据后决定：浮点因果 mask
@@ -308,7 +311,7 @@ bash scripts/build_hexagon_android.sh "$PWD" all
 - `jniLibs/arm64-v8a/libMNN_htpops.so`：Android stub。
 - `assets/mnn/hexagon/manifest.json`：schema 2，记录每个架构的资源与构建来源。
 - `assets/mnn/hexagon/<架构>/`：DSP skeleton、`libc++.so.1`、`libc++abi.so.1`。
-- `native/android-arm64-v8a.json`：JNI ABI 8；编译后端来自实际构建参数，`runtime.hexagon.dspArchitectures` 列出所打包架构。
+- `native/android-arm64-v8a.json`：JNI ABI 9；编译后端来自实际构建参数，`runtime.hexagon.dspArchitectures` 列出所打包架构。
 
 DSP ELF 必须放 assets，不能伪装成 ARM64 JNI 库。首次查询后端能力时，插件通过
 FastRPC 查询真实架构，仅将匹配的一套校验并解包到 `noBackupFilesDir/mnn/hexagon/<清单hash>/<架构>/`，

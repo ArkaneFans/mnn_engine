@@ -1,5 +1,7 @@
 ## 0.2.2
 
+- Reuse KV across OpenAI-compatible requests by default through MNN's official normalized `prompt_cache` and `syncPromptCache()` flow, including Qwen3.5 linear-attention turn append. Delegate cancellation rollback and linear-state replay to official `eraseHistory()`, preserve prior cache before inference, and restore complete history after interrupted incremental prefill. Add a per-request `cache_prompt` opt-out and cached input counts in non-streaming usage and request logs. Retained state follows official conversation semantics, including prior thinking omitted from rendered history. Reset inconsistent/error state and bypass text caching for media or unsupported layouts. Upgrade the JNI adapter ABI to 9.
+
 - Add per-request thinking switches to streaming and non-streaming chat completions: `enable_thinking`, or `reasoning_effort` mapped to on/off. Restore the loaded model's template defaults for subsequent requests, retain tool context, and reject conflicting controls.
 - Upgrade the pinned MNN source and bundled Android arm64 libraries to 3.6.2.
 - Adapt prefill cancellation to the updated multimodal position handling, including relative spatial positions and four-axis mRoPE. Retain the MTOK added-token compatibility fix.

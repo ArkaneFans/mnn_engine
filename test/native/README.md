@@ -9,6 +9,8 @@ bash scripts/test_mnn_tokenizer.sh "$PWD"
 
 The first command checks the model-format guard, incremental generation,
 prefill cancellation and reuse, per-request thinking overrides and model defaults,
+official message-response/cache delegation, cache opt-out, ordinary/linear
+history rollback, partial-prefill restoration and inconsistent-state invalidation,
 model chunk defaults, failure handling, bounded
 native log storage, and the real MNN log macros with Android logging suppressed.
 LLM execution is stubbed; this does not measure
@@ -39,12 +41,59 @@ that the next request matches a clean generation. It downloads nothing and
 does not replace the packaged Android libraries. This is a CPU correctness
 check; Android GPU and image-input acceptance require device testing.
 
+The host script also exercises the production adapter with complete chat
+histories, compared with a separate official `Llm` conversation using the same
+response, sync and erase APIs. Consecutive appends and thinking switches must
+report substantial cache hits for both ordinary and linear attention. Retries
+omitting the last reply, history edits and opt-out follow official fallback.
+Cancelled decode rolls back through official retained-history replay; the next
+request must match the official reference. The raw-token fixture separately
+verifies that a completed prefill chunk can be resumed with identical output.
+These adapter comparisons use high precision, normal memory mode, and greedy
+sampling to check cache state separately from changes in quantized execution.
+
 The same C++ fixture accepts an optional `cpu`, `opencl`, or `vulkan` argument
 when cross-compiled with the Android NDK and linked to the packaged `libMNN.so`.
 Run it from a writable device test directory. GPU runs disable tuning so this
 checks correctness, not throughput, and keep OpenCL/Vulkan caches in separate
 `.mnn-prefill-test-<backend>` directories. The Android app's normal tuning
 settings and HTTP/MethodChannel cancellation should be checked separately.
+
+To run only the official conversation/cache comparison, build the fixture with
+`MNN_ENGINE_REAL_ADAPTER_TEST` and use:
+
+```bash
+./mnn_prefill_integration_test /path/to/model/config.json --adapter-only cpu
+./mnn_prefill_integration_test /path/to/model/config.json --adapter-only vulkan
+./mnn_prefill_integration_test /path/to/model/config.json --adapter-only opencl
+```
+
+These runs keep backend compilation caches in `.mnn-official-cache-test-<backend>`.
+
+Acceptance on 2026-11-15 with MNN 3.6.2: Qwen3-0.6B and Qwen3.5-0.8B passed
+all 13 official conversation cases on Linux CPU. Qwen3.5-0.8B also passed those
+cases on an SM8475 device with CPU and Vulkan. The fixture uses high precision,
+normal memory, greedy sampling, 128-token chunks, no async/mmap, and no GPU
+tuning. On the device, successive appends reported `prompt=271, cached=249`
+and `prompt=293, cached=272`; retry after cancellation reported
+`prompt=271, cached=264`.
+
+OpenCL passed a separate smoke test that appends each actual reply to its own
+history, including thinking switches, cancellation recovery and cache opt-out.
+The cross-instance output comparison did not pass: two official `Llm` instances
+also produced different greedy output on the first uncached request without
+calling the adapter. The cause remains unresolved, so this establishes cache
+reuse functionality on that device, not OpenCL output equivalence. These text
+results are separate from the low-precision image failure linked below.
+
+For text models, add `--resume-prefill` to verify reuse of the 128-token
+completed prefix after cancellation. Use `--chunked-only` on GPU when comparing
+against the same prefill shapes:
+
+```bash
+./mnn_prefill_integration_test /path/to/model/config.json cpu --resume-prefill
+./mnn_prefill_integration_test /path/to/model/config.json vulkan --chunked-only --resume-prefill
+```
 
 For multimodal models, pass an image after the backend:
 

@@ -7,6 +7,7 @@ import com.arkanefans.mnn_engine.logging.MnnLogStore
 import com.arkanefans.mnn_engine.model.MnnModelInfo
 import com.arkanefans.mnn_engine.runtime.MnnRuntimeManager
 import com.google.gson.JsonPrimitive
+import com.google.gson.JsonParser
 import org.mockito.Mockito
 import java.io.BufferedInputStream
 import java.io.File
@@ -31,6 +32,25 @@ import kotlin.test.assertTrue
 
 /** Real CIO sockets, with only the synchronous native call replaced by latches. */
 class MnnOpenAiServerCancellationTest {
+    @Test
+    fun cachePolicyReachesRuntimeAndUsageCountsIncludeCachedTokens() {
+        Fixture().use { f ->
+            f.allowReturn.countDown()
+            for (stream in listOf(false, true)) {
+                val enabled = f.post(stream = stream)
+                assertEquals(200, enabled.first)
+                if (!stream) {
+                    val usage = JsonParser.parseString(enabled.second).asJsonObject.getAsJsonObject("usage")
+                    assertEquals(1, usage.get("prompt_tokens").asInt)
+                    assertEquals(1, usage.getAsJsonObject("prompt_tokens_details").get("cached_tokens").asInt)
+                }
+                assertEquals(200, f.post(stream = stream, extraFields = """"cache_prompt":false""").first)
+            }
+            assertEquals(listOf(true, false, true, false), f.cacheControls)
+            assertEquals(400, f.post(extraFields = """"cache_prompt":"false"""").first)
+        }
+    }
+
     @Test
     fun thinkingSwitchAlsoSelectsTheCorrectOpenAiOutputFieldWithAndWithoutTools() {
         Fixture(thinkingTemplate = true).use { f ->
@@ -249,6 +269,7 @@ class MnnOpenAiServerCancellationTest {
         val generations = AtomicInteger()
         val cancellations = AtomicInteger()
         val thinkingControls = CopyOnWriteArrayList<Boolean?>()
+        val cacheControls = CopyOnWriteArrayList<Boolean>()
         val executor = Executors.newSingleThreadExecutor()
         private val configPath = if (thinkingTemplate) {
             File(directory, "thinking-config.json").apply {
@@ -270,7 +291,8 @@ class MnnOpenAiServerCancellationTest {
                 }
                 "generate" -> {
                     thinkingControls.add(invocation.getArgument<Boolean?>(5))
-                    val onToken = invocation.getArgument<(String) -> Boolean>(7)
+                    cacheControls.add(invocation.getArgument<Boolean>(6))
+                    val onToken = invocation.getArgument<(String) -> Boolean>(8)
                     if (generations.incrementAndGet() == 1) {
                         started.countDown()
                         try {
@@ -288,7 +310,7 @@ class MnnOpenAiServerCancellationTest {
                     } else {
                         assertFalse(onToken("ok"))
                     }
-                    MnnRuntimeManager.GenerationResult(1, 1, 1, 1, 1, "stop")
+                    MnnRuntimeManager.GenerationResult(1, 1, 1, 1, 1, "stop", cachedPromptTokens = 1)
                 }
                 else -> Mockito.RETURNS_DEFAULTS.answer(invocation)
             }

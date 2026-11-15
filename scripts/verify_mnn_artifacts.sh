@@ -58,6 +58,7 @@ required_symbols=(
     'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeSession_nativeGenerate'
     'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeSession_nativeCancel'
     'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeSession_nativeReset'
+    'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeSession_nativePrepareGeneration'
     'Java_com_arkanefans_mnn_1engine_runtime_MnnNativeSession_nativeRelease'
 )
 symbols="$("${readelf_bin}" -Ws "${jni_library}")"
@@ -105,8 +106,8 @@ if info["androidPlatform"] != "android-28":
     raise SystemExit(f"unexpected Android platform in build info: {info['androidPlatform']}")
 if info["cmakeVersion"] != "3.22.1":
     raise SystemExit(f"unexpected CMake version in build info: {info['cmakeVersion']}")
-if int(info["nativeAdapterAbiVersion"]) < 8:
-    raise SystemExit("nativeAdapterAbiVersion must be at least 8")
+if int(info["nativeAdapterAbiVersion"]) < 9:
+    raise SystemExit("nativeAdapterAbiVersion must be at least 9")
 flags = set(info["cmakeFlags"])
 if len(flags & {"MNN_HEXAGON=ON", "MNN_HEXAGON=OFF"}) != 1:
     raise SystemExit("build info must specify exactly one MNN_HEXAGON mode")

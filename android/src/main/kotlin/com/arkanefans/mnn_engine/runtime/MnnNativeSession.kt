@@ -17,6 +17,7 @@ class MnnNativeSession private constructor(
         val decodeUs: Long,
         val sampleUs: Long,
         val finishReason: String,
+        val cachedPromptTokens: Int = 0,
     )
 
     fun generate(
@@ -36,6 +37,7 @@ class MnnNativeSession private constructor(
             decodeUs = json.long("decode_us"),
             sampleUs = json.long("sample_us"),
             finishReason = json.string("finish_reason") ?: "stop",
+            cachedPromptTokens = json.int("cached_prompt_tokens"),
         )
     }
 
@@ -45,6 +47,10 @@ class MnnNativeSession private constructor(
 
     fun reset() {
         nativeHandle.takeIf { it != 0L }?.let(::nativeReset)
+    }
+
+    fun prepareGeneration() {
+        nativeHandle.takeIf { it != 0L }?.let(::nativePrepareGeneration)
     }
 
     @Synchronized
@@ -71,6 +77,7 @@ class MnnNativeSession private constructor(
 
     private external fun nativeCancel(handle: Long)
     private external fun nativeReset(handle: Long)
+    private external fun nativePrepareGeneration(handle: Long)
     private external fun nativeRelease(handle: Long)
 
     companion object {

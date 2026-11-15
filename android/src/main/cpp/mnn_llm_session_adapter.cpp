@@ -107,6 +107,7 @@ class SteppingStreamBuffer : public std::streambuf {
 public:
     explicit SteppingStreamBuffer(const std::function<bool(const std::string&)>& callback)
         : callback_(callback), utf8_([this](const std::string& text) {
+              if (captureText_) text_ += text;
               if (!text.empty() && callback_) {
                   stopRequested_ = stopRequested_ || callback_(text);
               }
@@ -115,6 +116,7 @@ public:
     bool stopRequested() const { return stopRequested_; }
     bool pendingEop() const { return pendingEop_; }
     bool finished() const { return finished_; }
+    const std::string& text() const { return text_; }
 
     void discardPendingEop() { pendingEop_ = false; }
 
@@ -127,7 +129,11 @@ public:
             utf8_.process(pending_.data(), pending_.size());
             pending_.clear();
         }
+        // A token limit can cut a UTF-8 character. Keep incomplete bytes on
+        // the existing stream path, but never put them into template JSON.
+        captureText_ = false;
         utf8_.flush();
+        captureText_ = true;
     }
 
 protected:
@@ -158,9 +164,11 @@ private:
     const std::function<bool(const std::string&)>& callback_;
     Utf8StreamProcessor utf8_;
     std::string pending_;
+    std::string text_;
     bool stopRequested_ = false;
     bool pendingEop_ = false;
     bool finished_ = false;
+    bool captureText_ = true;
 };
 
 ChatMessages parseMessages(const std::string& messagesJson) {
@@ -255,13 +263,23 @@ bool MnnLlmSessionAdapter::load(std::string* errorMessage) {
         effectiveConfig.value("attention_mask", "float") == "float") {
         config["chunk"] = 128;
     }
+    // MNN owns normalized history matching and incremental prefill.
+    config["reuse_kv"] = true;
+    config["prompt_cache"] = true;
     if (!llm_->set_config(config.dump())) {
         if (errorMessage != nullptr) *errorMessage = "MNN rejected the runtime config";
         return false;
     }
-    if (backend_ == "hexagon") {
+    try {
         const auto modelInfo = inspectMnnHexagonModel(configPath_, llm_->dump_config());
-        if (modelInfo.nonC4AttentionOps > 0) {
+        canReuseKv_ = modelInfo.hasKvCache && !modelInfo.hasUncachedAttention &&
+                effectiveConfig.value("speculative_type", "").empty() &&
+                effectiveConfig.value("attention_mask", "float") == "float" &&
+                effectiveConfig.value("attention_type", "full") == "full" &&
+                effectiveConfig.value("model_type", "").find("hunyuan") == std::string::npos &&
+                !effectiveConfig.value("has_talker", false) &&
+                (!effectiveConfig.contains("token_compress") || effectiveConfig["token_compress"] == 0);
+        if (backend_ == "hexagon" && modelInfo.nonC4AttentionOps > 0) {
             const auto message = "model_backend_incompatible: MNN Hexagon requires Transformer C4 attention; found " +
                     std::to_string(modelInfo.nonC4AttentionOps) + " Attention op(s) with output_c4=false, first=" +
                     modelInfo.firstNonC4Attention +
@@ -270,6 +288,10 @@ bool MnnLlmSessionAdapter::load(std::string* errorMessage) {
             if (errorMessage != nullptr) *errorMessage = message;
             return false;
         }
+    } catch (const std::exception&) {
+        if (backend_ == "hexagon") throw;
+        canReuseKv_ = false;
+        recordMnnNativeDiagnostic(5, "mnn_engine", "KV graph inspection unavailable; using full prefill");
     }
     const bool loaded = llm_->load();
     if (!loaded || hasRuntimeError(llm_->getContext())) {
@@ -297,6 +319,10 @@ MnnLlmSessionAdapter::Metrics MnnLlmSessionAdapter::generate(
     clearMnnNativeDiagnostics();
     if (llm_ == nullptr) throw std::runtime_error("Model is not loaded");
     auto requestConfig = requestConfigJson.empty() ? json::object() : json::parse(requestConfigJson);
+    const bool cachePrompt = requestConfig.value("cache_prompt", true);
+    requestConfig.erase("cache_prompt");
+    requestConfig["reuse_kv"] = true;
+    requestConfig["prompt_cache"] = cachePrompt && canReuseKv_;
     auto templateContext = json::parse(baseTemplateContext_);
     if (requestConfig.contains("jinja") && requestConfig["jinja"].is_object() &&
         requestConfig["jinja"].contains("context") && requestConfig["jinja"]["context"].is_object()) {
@@ -312,13 +338,17 @@ MnnLlmSessionAdapter::Metrics MnnLlmSessionAdapter::generate(
         throw std::invalid_argument("maxTokens must be -1 or greater");
     }
     const ChatMessages messages = parseMessages(messagesJson);
-    llm_->reset();
     restoreRunningStatusIfTerminal();
     if (hasRuntimeError(llm_->getContext())) {
         failGeneration("MNN generation cannot start; reload the model after a runtime error",
                 "stage=request_begin, backend=" + backend_ + ", " + contextSummary(llm_->getContext()));
     }
     if (cancelRequested_.load()) {
+        // No inference has run for this request, so the prior KV is intact.
+        if (!cachePrompt) {
+            cachedMessages_.clear();
+            llm_->reset();
+        }
         Metrics metrics;
         metrics.finishReason = "cancelled";
         return metrics;
@@ -327,12 +357,41 @@ MnnLlmSessionAdapter::Metrics MnnLlmSessionAdapter::generate(
     SteppingStreamBuffer streamBuffer(onToken);
     std::ostream output(&streamBuffer);
     int generated = 0;
+    int fullPromptTokens = 0;
+    int cachedPromptTokens = 0;
+    bool retainCache = false;
+    bool prefillCompleted = false;
+    size_t kvBeforeDecode = 0;
+    const auto previousMessages = cachedMessages_;
+    const auto* initialContext = llm_->getContext();
+    const size_t kvBeforeRequest = initialContext->all_seq_len < 0 ? 0 : initialContext->all_seq_len;
     const auto hasTokenBudget = [&]() {
         return maxTokens == kNoTokenLimit || generated < maxTokens;
     };
     {
         PrefillCancellationScope cancellation(cancelRequested_);
+        const std::string prompt = llm_->apply_chat_template(messages);
+        // Media token positions also depend on embeddings and mRoPE state.
+        // Keep those requests on the existing full-prefill path.
+        const bool reusable = cachePrompt && canReuseKv_ && prompt.find("<img") == std::string::npos &&
+                prompt.find("<audio") == std::string::npos && prompt.find("<video") == std::string::npos;
+        if (!reusable) {
+            llm_->reset();
+            cachedMessages_.clear();
+        }
+        llm_->set_config(reusable ? R"({"prompt_cache":true})" : R"({"prompt_cache":false})");
+        // Cached text needs a full-input count alongside MNN's delta count.
+        // Uncached/media input is encoded only by the official response path.
+        if (reusable) fullPromptTokens = static_cast<int>(llm_->tokenizer_encode(prompt).size());
         llm_->response(messages, &output, "<eop>", 0);
+        const auto* context = llm_->getContext();
+        if (!reusable) fullPromptTokens = context->prompt_len;
+        cachedPromptTokens = reusable ? std::max(0, fullPromptTokens - context->prompt_len) : 0;
+        const size_t base = cachedPromptTokens > 0 ? kvBeforeRequest : 0;
+        prefillCompleted = context->all_seq_len >= 0 && context->prompt_len >= 0 &&
+                static_cast<size_t>(context->all_seq_len) == base + context->prompt_len;
+        kvBeforeDecode = llm_->getCurrentHistory();
+        retainCache = reusable;
     }
     // response(..., 0) performs prefill. A failed forward leaves an error
     // status, and generate(1) would just return without explaining the cause.
@@ -384,9 +443,10 @@ MnnLlmSessionAdapter::Metrics MnnLlmSessionAdapter::generate(
     streamBuffer.finalizePendingEop();
 
     Metrics metrics;
-    const auto* context = llm_->getContext();
+    auto* context = const_cast<MNN::Transformer::LlmContext*>(llm_->getContext());
     if (context != nullptr) {
-        metrics.promptTokens = context->prompt_len;
+        metrics.promptTokens = fullPromptTokens;
+        metrics.cachedPromptTokens = cachedPromptTokens;
         metrics.completionTokens = context->gen_seq_len;
         metrics.prefillUs = context->prefill_us;
         metrics.decodeUs = context->decode_us;
@@ -398,16 +458,63 @@ MnnLlmSessionAdapter::Metrics MnnLlmSessionAdapter::generate(
                (context == nullptr || context->status != LlmStatus::NORMAL_FINISHED)) {
         metrics.finishReason = "length";
     }
+    if (retainCache && metrics.finishReason != "cancelled") {
+        auto history = messages;
+        if (!streamBuffer.text().empty()) history.emplace_back("assistant", streamBuffer.text());
+        syncCachedHistory(history);
+    } else if (retainCache && prefillCompleted && rollbackHistory(kvBeforeDecode)) {
+        // Match official ResponseWithHistory: discard cancelled decode and
+        // let eraseHistory() rebuild retained linear-attention state.
+        syncCachedHistory(messages);
+    } else if (retainCache && cachedPromptTokens > 0 && !previousMessages.empty() &&
+            rollbackHistory(kvBeforeRequest)) {
+        // A partial prefill cannot represent the complete request. Restore
+        // the last complete conversation through MNN's history replay.
+        syncCachedHistory(previousMessages);
+    } else {
+        cachedMessages_.clear();
+        if (metrics.finishReason == "cancelled") llm_->reset();
+    }
     return metrics;
+}
+
+void MnnLlmSessionAdapter::syncCachedHistory(const ChatMessages& messages) {
+    llm_->syncPromptCache(messages);
+    cachedMessages_ = messages;
+}
+
+bool MnnLlmSessionAdapter::rollbackHistory(size_t keep) {
+    auto* context = const_cast<MNN::Transformer::LlmContext*>(llm_->getContext());
+    if (keep == 0 || hasRuntimeError(context)) return false;
+    const size_t previous = llm_->getCurrentHistory();
+    {
+        std::lock_guard<std::mutex> historyLock(context->mutex);
+        if (previous < keep || previous > context->history_tokens.size() ||
+                context->all_seq_len < 0 || previous != static_cast<size_t>(context->all_seq_len)) return false;
+        // Queued prefill tokens and a sampled EOS may not have completed KV.
+        context->history_tokens.resize(previous);
+    }
+    if (previous > keep) llm_->eraseHistory(keep, 0);
+    if (hasRuntimeError(context)) {
+        failGeneration("MNN generation failed while restoring cached history",
+                "stage=cache_rollback, backend=" + backend_ + ", " + contextSummary(context));
+    }
+    return context->all_seq_len == static_cast<int>(keep);
 }
 
 void MnnLlmSessionAdapter::cancel() {
     cancelRequested_.store(true);
 }
 
+void MnnLlmSessionAdapter::prepareGeneration() {
+    std::lock_guard<std::mutex> lock(generationMutex_);
+    cancelRequested_.store(false);
+}
+
 void MnnLlmSessionAdapter::reset() {
     std::lock_guard<std::mutex> lock(generationMutex_);
     cancelRequested_.store(false);
+    cachedMessages_.clear();
     if (llm_ != nullptr) llm_->reset();
 }
 

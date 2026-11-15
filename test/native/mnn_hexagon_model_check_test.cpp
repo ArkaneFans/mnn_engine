@@ -114,6 +114,14 @@ int main() {
         require(info.nonC4AttentionOps == 1, "Preserve the direct .mnn config path convention");
         ++cases;
 
+        auto linear = std::make_unique<MNN::OpT>();
+        linear->type = MNN::OpType_LinearAttention;
+        net.subgraphs.back()->nodes.emplace_back(std::move(linear));
+        writeGraph(root / "llm.mnn", net);
+        info = inspectMnnHexagonModel((root / "llm.mnn").string(), R"({"llm_model":"llm.mnn"})");
+        require(info.hasKvCache && info.hasLinearAttention, "Detect linear KV state inside subgraphs too");
+        ++cases;
+
         std::ofstream(config) << "{}";
         std::ofstream(root / "llm.mnn", std::ios::binary) << std::string(64, '\0');
         expectFailure(config);

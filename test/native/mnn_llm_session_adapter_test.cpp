@@ -51,6 +51,168 @@ int main() {
     try {
         {
             fakeLlm = {};
+            fakeHexagonModel.hasKvCache = true;
+            fakeLlm.tokenText = "A\xf0\x9f";
+            MnnLlmSessionAdapter adapter("config.json", "{}");
+            load(adapter);
+            std::string streamed;
+            adapter.generate(messages, "{}", 1, [&](const auto& part) { streamed += part; return false; });
+            require(streamed == fakeLlm.tokenText && fakeLlm.syncedMessages.back().back().second == "A",
+                    "Truncated UTF-8 must not corrupt the official cache's template JSON");
+            fakeHexagonModel = {};
+            ++cases;
+        }
+        {
+            fakeLlm = {};
+            fakeHexagonModel = {};
+            fakeHexagonModel.hasKvCache = true;
+            fakeLlm.inputTokens = {1, 2, 3, 4};
+            MnnLlmSessionAdapter adapter("config.json", "{}");
+            load(adapter);
+            adapter.generate(messages, "{}", 1, [](const auto&) { return false; });
+            require(fakeLlm.messageResponseCalls == 1 && fakeLlm.syncedMessages.back().size() == 2,
+                    "Normal completion must use official message response and sync the assistant history");
+            fakeLlm.inputTokens = {1, 2, 3, 4, 5, 6, 7};
+            fakeLlm.officialCachedTokens = 3;
+            auto metrics = adapter.generate(messages, "{}", 0, [](const auto&) { return false; });
+            require(metrics.promptTokens == 7 && metrics.cachedPromptTokens == 3 &&
+                        fakeLlm.prefillInputs.back() == std::vector<int>({4, 5, 6, 7}),
+                    "Usage must report the full prompt and the actual official incremental prefill");
+            require(fakeLlm.syncedMessages.back().size() == 1,
+                    "Prefill-only completion must not append an empty assistant");
+            metrics = adapter.generate(messages, R"({"cache_prompt":false})", 0, [](const auto&) { return false; });
+            require(metrics.cachedPromptTokens == 0 && fakeLlm.retainedPrefixes.back().empty(),
+                    "Cache opt-out must clear and bypass official prompt reuse");
+            require(adapter.generate(messages, "{}", 0, [](const auto&) { return false; }).cachedPromptTokens == 0,
+                    "A disabled request must not seed the next request's prompt cache");
+            adapter.reset();
+            require(adapter.generate(messages, "{}", 0, [](const auto&) { return false; }).cachedPromptTokens == 0,
+                    "Explicit reset must clear official prompt cache");
+            fakeHexagonModel = {};
+            ++cases;
+        }
+        for (bool linear : {false, true}) {
+            fakeLlm = {};
+            fakeHexagonModel.hasKvCache = true;
+            fakeHexagonModel.hasLinearAttention = linear;
+            fakeLlm.linearReplay = linear;
+            fakeLlm.inputTokens = {1, 2, 3, 4};
+            MnnLlmSessionAdapter adapter("config.json", "{}");
+            load(adapter);
+            const auto metrics = adapter.generate(messages, "{}", 8, [](const auto&) { return true; });
+            require(metrics.finishReason == "cancelled" && fakeLlm.erasedHistory.back() == 4 &&
+                        fakeLlm.replayCalls == (linear ? 1 : 0) && fakeLlm.resetCalls == 0,
+                    "Decode cancellation must delegate retained-state rollback to official eraseHistory");
+            require(fakeLlm.syncedMessages.back().size() == 1,
+                    "Cancelled decode must sync the request history without a partial assistant");
+            adapter.prepareGeneration();
+            fakeLlm.officialCachedTokens = 2;
+            require(adapter.generate(messages, "{}", 0, [](const auto&) { return false; }).cachedPromptTokens == 2,
+                    "Official prompt reuse must remain available after ordinary or linear rollback");
+            fakeHexagonModel = {};
+            ++cases;
+        }
+        {
+            fakeLlm = {};
+            fakeHexagonModel.hasKvCache = true;
+            MnnLlmSessionAdapter adapter("config.json", "{}");
+            load(adapter);
+            adapter.generate(messages, "{}", 1, [](const auto&) { return false; });
+            adapter.prepareGeneration();
+            adapter.cancel();
+            const int resets = fakeLlm.resetCalls;
+            require(adapter.generate(messages, "{}", 1, [](const auto&) { return false; }).finishReason == "cancelled" &&
+                        fakeLlm.resetCalls == resets,
+                    "Cancellation before inference must preserve the prior official cache");
+            adapter.prepareGeneration();
+            fakeLlm.officialCachedTokens = 3;
+            require(adapter.generate(messages, "{}", 0, [](const auto&) { return false; }).cachedPromptTokens == 3,
+                    "The next prepared request must reuse the preserved official cache");
+            adapter.prepareGeneration();
+            adapter.cancel();
+            adapter.generate(messages, R"({"cache_prompt":false})", 0, [](const auto&) { return false; });
+            adapter.prepareGeneration();
+            require(adapter.generate(messages, "{}", 0, [](const auto&) { return false; }).cachedPromptTokens == 0,
+                    "Cache opt-out must clear even when cancelled before inference");
+            fakeHexagonModel = {};
+            ++cases;
+        }
+        for (int cancelAt : {0, 2}) {
+            fakeLlm = {};
+            fakeHexagonModel.hasKvCache = true;
+            fakeLlm.prefillBatches = 3;
+            MnnLlmSessionAdapter adapter("config.json", "{}");
+            load(adapter);
+            fakeLlm.onPrefillBatch = [&](int batch) { if (batch == cancelAt) adapter.cancel(); };
+            const auto metrics = adapter.generate(messages, "{}", 8, [](const auto&) { return false; });
+            require(metrics.finishReason == "cancelled" && metrics.completionTokens == 0,
+                    "Prefill cancellation must remain a normal cancellation");
+            require(cancelAt == 0 ? fakeLlm.resetCalls == 1 && fakeLlm.syncedMessages.empty()
+                                 : fakeLlm.resetCalls == 0 && fakeLlm.syncedMessages.back().size() == 1,
+                    "Only a complete prefill may seed the official complete-history prompt cache");
+            fakeLlm.onPrefillBatch = {};
+            adapter.prepareGeneration();
+            fakeLlm.officialCachedTokens = 14;
+            require(adapter.generate(messages, "{}", 0, [](const auto&) { return false; }).cachedPromptTokens ==
+                        (cancelAt == 0 ? 0 : 14),
+                    "Uncomputed prefill tokens must never be reported as cached");
+            fakeHexagonModel = {};
+            ++cases;
+        }
+        {
+            fakeLlm = {};
+            fakeHexagonModel.hasKvCache = true;
+            fakeHexagonModel.hasLinearAttention = true;
+            fakeLlm.linearReplay = true;
+            MnnLlmSessionAdapter adapter("config.json", "{}");
+            load(adapter);
+            adapter.generate(messages, "{}", 0, [](const auto&) { return false; });
+            fakeLlm.prefillBatches = 3;
+            fakeLlm.officialCachedTokens = 3;
+            fakeLlm.onPrefillBatch = [&](int batch) { if (batch == 0) adapter.cancel(); };
+            adapter.generate(messages, "{}", 8, [](const auto&) { return false; });
+            require(fakeLlm.erasedHistory.back() == 7 && fakeLlm.replayCalls == 1 && fakeLlm.resetCalls == 0,
+                    "Partial incremental prefill must restore the prior complete state through official replay");
+            fakeLlm.onPrefillBatch = {};
+            adapter.prepareGeneration();
+            require(adapter.generate(messages, "{}", 0, [](const auto&) { return false; }).cachedPromptTokens == 3,
+                    "The restored conversation must remain reusable after partial prefill cancellation");
+            fakeHexagonModel = {};
+            ++cases;
+        }
+        {
+            fakeLlm = {};
+            fakeHexagonModel.hasKvCache = true;
+            fakeLlm.unsyncedKv = true;
+            MnnLlmSessionAdapter adapter("config.json", "{}");
+            load(adapter);
+            adapter.generate(messages, "{}", 8, [](const auto&) { return true; });
+            require(fakeLlm.resetCalls == 1 && fakeLlm.erasedHistory.empty(),
+                    "Inconsistent committed lengths must reset instead of replaying unverified history");
+            fakeHexagonModel = {};
+            ++cases;
+        }
+        {
+            fakeLlm = {};
+            fakeHexagonModel.hasKvCache = true;
+            MnnLlmSessionAdapter adapter("config.json", "{}");
+            load(adapter);
+            adapter.generate(messages, "{}", 1, [&](const auto&) { adapter.cancel(); return false; });
+            require(fakeLlm.erasedHistory.size() == 1,
+                    "Atomic cancellation must use the same official rollback as callback cancellation");
+            adapter.prepareGeneration();
+            require(adapter.generate(R"([{"role":"user","content":"<img>test.jpg</img>"}])", "{}", 0,
+                        [](const auto&) { return false; }).cachedPromptTokens == 0 &&
+                        !nlohmann::json::parse(fakeLlm.effectiveConfig)["prompt_cache"].get<bool>(),
+                    "Media requests must bypass the text-only official prompt cache");
+            fakeLlm.officialCachedTokens = 3;
+            require(adapter.generate(messages, "{}", 0, [](const auto&) { return false; }).cachedPromptTokens == 0,
+                    "Media state must not seed a later text prompt cache");
+            fakeHexagonModel = {};
+            ++cases;
+        }
+        {
+            fakeLlm = {};
             fakeHexagonModel = {28, "Attention/Reshape_8_output_0"};
             MnnLlmSessionAdapter adapter("config.json", R"({"backend_type":"hexagon"})");
             std::string error;

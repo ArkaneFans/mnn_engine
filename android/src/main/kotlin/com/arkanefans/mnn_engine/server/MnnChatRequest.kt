@@ -28,6 +28,7 @@ internal data class MnnChatRequest(
     val toolChoice: MnnToolChoice,
     val parallelToolCalls: Boolean,
     val thinkingEnabled: Boolean? = null,
+    val cachePrompt: Boolean = true,
 ) {
     val hasTools: Boolean
         get() = tools.size() > 0 && toolChoice.mode != MnnToolChoiceMode.NONE
@@ -126,6 +127,7 @@ internal object MnnChatRequestParser {
             toolChoice = toolChoice,
             parallelToolCalls = parallel,
             thinkingEnabled = parseThinking(root),
+            cachePrompt = root.bool("cache_prompt") ?: true,
         )
     }
 

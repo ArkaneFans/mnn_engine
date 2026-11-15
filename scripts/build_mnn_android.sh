@@ -7,7 +7,7 @@ cmake_bin="${MNN_CMAKE:-${HOME}/.local/share/mnn_engine/toolchains/cmake-3.22.1/
 android_ndk="${ANDROID_NDK:-${HOME}/android-ndk-r27d}"
 ninja_bin="/usr/bin/ninja"
 verifier_script="${plugin_root}/scripts/verify_mnn_artifacts.sh"
-adapter_abi_version="8"
+adapter_abi_version="9"
 expected_cmake_version="3.22.1"
 hexagon_enabled="${MNN_HEXAGON:-OFF}"
 case "${hexagon_enabled}" in

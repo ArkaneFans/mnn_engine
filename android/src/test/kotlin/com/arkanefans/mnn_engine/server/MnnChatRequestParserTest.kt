@@ -8,6 +8,18 @@ import kotlin.test.assertTrue
 
 class MnnChatRequestParserTest {
     @Test
+    fun promptCachingDefaultsOnAndRequiresABooleanOverride() {
+        val body = """{"messages":[{"role":"user","content":"hello"}]}"""
+        assertTrue(MnnChatRequestParser.parse(body).cachePrompt)
+        assertEquals(false, MnnChatRequestParser.parse(body.dropLast(1) + """, "cache_prompt":false}""").cachePrompt)
+        for (value in listOf("\"false\"", "0", "null", "[]")) {
+            assertFailsWith<IllegalArgumentException> {
+                MnnChatRequestParser.parse(body.dropLast(1) + """, "cache_prompt":$value}""")
+            }
+        }
+    }
+
+    @Test
     fun parsesThinkingSwitchAndReasoningEffortAsBinaryControls() {
         fun parse(fields: String) = MnnChatRequestParser.parse(
             """{"messages":[{"role":"user","content":"hello"}],$fields}""",

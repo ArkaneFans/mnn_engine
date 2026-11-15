@@ -392,6 +392,7 @@ class MnnOpenAiServer(
                 runtimeManager.generate(
                     messages, request.effectiveTools(), request.temperature, request.topP, request.maxTokens,
                     thinkingEnabled = request.thinkingEnabled,
+                    cachePrompt = request.cachePrompt,
                     canGenerate = { gate.allows(requestId) },
                     onToken = { token ->
                         if (!gate.allows(requestId)) true else try {
@@ -523,6 +524,7 @@ class MnnOpenAiServer(
 
     private fun usage(metrics: MnnRuntimeManager.GenerationResult) = JsonObject().apply {
         addProperty("prompt_tokens", metrics.promptTokens); addProperty("completion_tokens", metrics.completionTokens); addProperty("total_tokens", metrics.promptTokens + metrics.completionTokens)
+        add("prompt_tokens_details", JsonObject().apply { addProperty("cached_tokens", metrics.cachedPromptTokens) })
     }
 
     private suspend fun io.ktor.server.routing.RoutingContext.respondJson(status: HttpStatusCode, body: JsonObject) = call.respondText(body.toString(), ContentType.Application.Json, status)

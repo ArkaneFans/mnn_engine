@@ -21,6 +21,20 @@ import kotlin.test.assertTrue
 
 class MnnRuntimeManagerTest {
     @Test
+    fun generationPreparationRetainsKvAndCachePolicyIsRequestScoped() {
+        Mockito.mockStatic(Log::class.java).use {
+            val fixture = Fixture { metrics("stop").copy(promptTokens = 9, cachedPromptTokens = 6) }
+            val result = fixture.generate(cachePrompt = false)
+            fixture.generate()
+            assertEquals(9, result.promptTokens)
+            assertEquals(6, result.cachedPromptTokens)
+            assertEquals(listOf(false, true), fixture.requestConfigs.map { it.get("cache_prompt").asBoolean })
+            Mockito.verify(fixture.session, Mockito.times(2)).prepareGeneration()
+            Mockito.verify(fixture.session, Mockito.never()).reset()
+        }
+    }
+
+    @Test
     fun thinkingOverridesAreBuiltFromTheModelConfigForEachGeneration() {
         Mockito.mockStatic(Log::class.java).use {
             for (defaultThinking in listOf(true, false)) {
@@ -156,13 +170,13 @@ class MnnRuntimeManagerTest {
         Mockito.mockStatic(Log::class.java).use {
             var cancelled = false
             val fixture = Fixture { metrics(if (cancelled) "cancelled" else "length") }
-            Mockito.doAnswer { cancelled = false; null }.`when`(fixture.session).reset()
+            Mockito.doAnswer { cancelled = false; null }.`when`(fixture.session).prepareGeneration()
             Mockito.doAnswer { cancelled = true; null }.`when`(fixture.session).cancel()
             fixture.onGenerating = { fixture.manager.cancelGeneration() }
 
             assertEquals("cancelled", fixture.generate().finishReason)
             val order = Mockito.inOrder(fixture.session)
-            order.verify(fixture.session).reset()
+            order.verify(fixture.session).prepareGeneration()
             order.verify(fixture.session).cancel()
             assertSame(fixture.model, fixture.manager.activeModel())
             assertNull(fixture.snapshots.last().lastError)
@@ -281,13 +295,14 @@ class MnnRuntimeManagerTest {
             setResidentField(it, "baseConfigJson", baseConfigJson)
         }
 
-        fun generate(thinkingEnabled: Boolean? = null, canGenerate: () -> Boolean = { true }) = manager.generate(
+        fun generate(thinkingEnabled: Boolean? = null, cachePrompt: Boolean = true, canGenerate: () -> Boolean = { true }) = manager.generate(
             messages = listOf(JsonObject().apply {
                 addProperty("role", "user")
                 addProperty("content", "hello")
             }),
             tools = JsonArray(), temperature = null, topP = null, maxTokens = 8,
             thinkingEnabled = thinkingEnabled,
+            cachePrompt = cachePrompt,
             canGenerate = canGenerate,
             onToken = { false },
         )
