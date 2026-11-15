@@ -10,6 +10,20 @@ import kotlin.test.assertTrue
 
 class MnnReasoningOutputParserTest {
     @Test
+    fun requestThinkingSwitchOverridesModelDefaultWithoutChangingPlainModels() {
+        val config = json("""{"jinja":{"context":{"enable_thinking":true},"chat_template":"assistant: <think>"}}""")
+        val disabled = MnnReasoningProfileDetector.detect(config, null, thinkingEnabled = false)
+        val enabled = MnnReasoningProfileDetector.detect(config, null, thinkingEnabled = true)
+        assertEquals(MnnReasoningInitialState.CONTENT, disabled.initialState)
+        assertEquals(MnnReasoningInitialState.REASONING, enabled.initialState)
+        assertEquals("answer", MnnReasoningOutputParser.parse("answer", disabled).content)
+        assertNull(MnnReasoningOutputParser.parse("answer", disabled).reasoningContent)
+        assertEquals("analysis", MnnReasoningOutputParser.parse("analysis", enabled).reasoningContent)
+        assertEquals(MnnReasoningInitialState.REASONING, MnnReasoningProfileDetector.detect(config, null).initialState)
+        assertEquals(MnnReasoningProfile.PLAIN, MnnReasoningProfileDetector.detect(JsonObject(), null, thinkingEnabled = true))
+    }
+
+    @Test
     fun detectsPromptSeededThinkingFromExplicitConfig() {
         val config = json(
             """{"jinja":{"context":{"enable_thinking":true}}}""",

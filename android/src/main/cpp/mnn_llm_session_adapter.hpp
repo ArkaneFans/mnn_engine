@@ -17,6 +17,7 @@ public:
         int64_t decodeUs = 0;
         int64_t sampleUs = 0;
         std::string finishReason = "stop";
+        int cachedPromptTokens = 0;
     };
 
     MnnLlmSessionAdapter(std::string configPath, std::string configJson);
@@ -32,16 +33,22 @@ public:
             int maxTokens,
             const std::function<bool(const std::string&)>& onToken);
     void cancel();
-    // Prepare a new request. The owner serializes this with cancel(); generate()
-    // deliberately preserves cancellations received before native entry.
+    // The owner serializes preparation with cancel(); generate() preserves
+    // cancellations received before native entry without discarding valid KV.
+    void prepareGeneration();
     void reset();
 
 private:
     void restoreRunningStatusIfTerminal();
+    void syncCachedHistory(const MNN::Transformer::ChatMessages& messages);
+    bool rollbackHistory(size_t keep);
 
     std::string configPath_;
     std::string configJson_;
+    std::string baseTemplateContext_ = "{}";
     std::string backend_ = "cpu";
+    MNN::Transformer::ChatMessages cachedMessages_;
+    bool canReuseKv_ = false;
     MNN::Transformer::Llm* llm_ = nullptr;
     std::atomic<bool> cancelRequested_{false};
     std::mutex generationMutex_;

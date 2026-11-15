@@ -43,7 +43,7 @@ Host apps do not need MNN source, CMake, the Android NDK, Linux, or WSL.
 | Minimum Android version | API 28 |
 | Compile SDK used by the plugin | 35 |
 | Flutter | 3.35.0 or newer |
-| MNN | 3.6.1 at commit `d407447ed56c4121a11ccbd266dc184ca1ead0c2` |
+| MNN | 3.6.2 at commit `7e3c6fb5225d3ccf22807ee641332669df34650d` |
 | Inference backend | CPU (default), OpenCL, Vulkan buffer; optional Hexagon |
 | Active models | One at a time |
 | Concurrent generations | One at a time |
@@ -287,6 +287,47 @@ curl http://127.0.0.1:8081/v1/chat/completions \
 `max_tokens` is optional. When omitted or set to `-1`, generation continues
 until the model emits an end token or the runtime reaches its context limit.
 `max_completion_tokens` and `n_predict` are accepted as aliases.
+
+Thinking can be controlled per request with `enable_thinking: true` or `false`.
+For OpenAI clients, `reasoning_effort: "none"` disables thinking; `minimal`, `low`,
+`medium`, `high`, `xhigh`, and `max` enable it with the same behavior. These values
+do not select different depths or thinking-token budgets. Conflicting controls
+or invalid types/values return HTTP 400 (`invalid_request`). Omitting both fields
+or setting them to `null` uses the loaded model's default for that request.
+
+The switch applies to streaming and non-streaming responses, including requests
+with tools. It uses MNN's `jinja.context.enable_thinking`, so the model's template
+must support that variable. Requests retain model template variables and receive
+a fresh tools context; an override does not carry into the next request or change
+the model files. Total output limits still include thinking and answer tokens.
+
+KV reuse is enabled by default. Each request still supplies the complete
+`messages` history. The resident session uses MNN's official `prompt_cache`
+and `syncPromptCache()` flow: it compares normalized history text with thinking
+blocks removed and prefills the new input while retaining the existing model
+state. This allows Qwen3.5 linear-attention conversations to append turns even
+when their template omits thinking blocks from old replies. Set
+`"cache_prompt": false` to clear and bypass reuse for that request. The next
+request defaults to caching again, starting without that request's cache.
+
+Non-streaming `usage.prompt_tokens` counts the complete input;
+`usage.prompt_tokens_details.cached_tokens` reports the reused portion. Both
+response modes log the prompt and cached token counts. The cache belongs to the
+single loaded session; it has no conversation ID, disk snapshots, or pool of
+saved conversations. As in the official app, retained state can include prior
+thinking that is omitted from the rendered history, so cached generation need
+not match a fresh full-history run. Changes or trims to the normalized history
+follow MNN's full-prefill fallback.
+
+Cancellation before inference preserves the prior cache. Decode cancellation
+calls official `eraseHistory()` to restore the completed prompt and syncs the
+request history without a partial reply. For linear attention, MNN re-prefills
+the retained history to rebuild its state. Cancellation during incremental
+prefill restores the last complete conversation when available; an incomplete
+first prefill cannot seed the complete-history cache. Queued tokens without KV
+are excluded from rollback. Inconsistent state, unloading, and native failures
+invalidate the cache. Media inputs, compressed tokens, speculative decoding,
+and unsupported attention layouts use full prefill.
 
 Use `MnnServerBindMode.allInterfaces` to listen on `0.0.0.0`. This makes the
 server reachable through Wi-Fi, hotspots, VPNs, and other IPv4 interfaces.

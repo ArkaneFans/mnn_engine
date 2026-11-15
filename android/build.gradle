@@ -51,8 +51,8 @@ tasks.register("verifyBundledMnnNativeArtifacts") {
             )
         }
         def manifest = new groovy.json.JsonSlurper().parse(nativeManifest)
-        if ((manifest.build.nativeAdapterAbiVersion as int) < 8) {
-            throw new GradleException("mnn_engine needs native adapter ABI 8. Rebuild and package the native libraries.")
+        if ((manifest.build.nativeAdapterAbiVersion as int) < 9) {
+            throw new GradleException("mnn_engine needs native adapter ABI 9. Rebuild and package the native libraries.")
         }
         if (!manifest.build.cmakeFlags.contains("MNN_ENGINE_LOG_BRIDGE=ON")) {
             throw new GradleException("mnn_engine requires the native MNN log bridge. Rebuild and package the native libraries.")

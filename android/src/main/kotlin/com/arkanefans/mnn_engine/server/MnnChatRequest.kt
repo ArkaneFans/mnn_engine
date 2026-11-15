@@ -27,6 +27,8 @@ internal data class MnnChatRequest(
     val tools: JsonArray,
     val toolChoice: MnnToolChoice,
     val parallelToolCalls: Boolean,
+    val thinkingEnabled: Boolean? = null,
+    val cachePrompt: Boolean = true,
 ) {
     val hasTools: Boolean
         get() = tools.size() > 0 && toolChoice.mode != MnnToolChoiceMode.NONE
@@ -124,7 +126,26 @@ internal object MnnChatRequestParser {
             tools = tools,
             toolChoice = toolChoice,
             parallelToolCalls = parallel,
+            thinkingEnabled = parseThinking(root),
+            cachePrompt = root.bool("cache_prompt") ?: true,
         )
+    }
+
+    private fun parseThinking(root: JsonObject): Boolean? {
+        val explicit = root.get("enable_thinking")?.takeUnless { it.isJsonNull }?.let {
+            require(it.isJsonPrimitive && it.asJsonPrimitive.isBoolean) { "enable_thinking must be a boolean." }
+            it.asBoolean
+        }
+        val effort = when (val value = root.optionalString("reasoning_effort")) {
+            null -> null
+            "none" -> false
+            "minimal", "low", "medium", "high", "xhigh", "max" -> true
+            else -> throw IllegalArgumentException("Unsupported reasoning_effort: $value")
+        }
+        require(explicit == null || effort == null || explicit == effort) {
+            "enable_thinking and reasoning_effort conflict."
+        }
+        return explicit ?: effort
     }
 
     private fun parseMessage(element: JsonElement): JsonObject {

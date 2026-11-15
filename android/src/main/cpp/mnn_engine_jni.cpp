@@ -157,6 +157,7 @@ Java_com_arkanefans_mnn_1engine_runtime_MnnNativeSession_nativeGenerate(
                 });
         nlohmann::json result = {
             {"prompt_tokens", metrics.promptTokens},
+            {"cached_prompt_tokens", metrics.cachedPromptTokens},
             {"completion_tokens", metrics.completionTokens},
             {"prefill_us", metrics.prefillUs},
             {"decode_us", metrics.decodeUs},
@@ -176,6 +177,14 @@ Java_com_arkanefans_mnn_1engine_runtime_MnnNativeSession_nativeCancel(
         jobject /* thiz */,
         jlong handle) {
     if (auto* session = sessionFrom(handle)) session->cancel();
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_arkanefans_mnn_1engine_runtime_MnnNativeSession_nativePrepareGeneration(
+        JNIEnv* /* env */,
+        jobject /* thiz */,
+        jlong handle) {
+    if (auto* session = sessionFrom(handle)) session->prepareGeneration();
 }
 
 extern "C" JNIEXPORT void JNICALL

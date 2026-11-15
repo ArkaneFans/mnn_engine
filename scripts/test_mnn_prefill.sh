@@ -20,9 +20,21 @@ test_binary="${build_dir}/mnn_prefill_integration_test"
     -DMNN_KLEIDIAI=OFF -DMNN_OPENCL=OFF -DMNN_VULKAN=OFF -DMNN_HEXAGON=OFF \
     -DMNN_BUILD_TEST=OFF -DMNN_BUILD_BENCHMARK=OFF
 "${cmake_bin}" --build "${build_dir}" --target MNN --parallel "${MNN_BUILD_JOBS:-4}"
-"${CXX:-g++}" -std=c++17 -Wall -Wextra \
+"${CXX:-g++}" -std=c++17 -Wall -Wextra -pthread -DMNN_ENGINE_REAL_ADAPTER_TEST \
     -I"${plugin_root}/android/src/main/cpp" \
     -isystem "${plugin_root}/MNN/include" -isystem "${plugin_root}/MNN/transformers/llm/engine/include" \
+    -isystem "${plugin_root}/MNN/schema/current" \
+    -isystem "${plugin_root}/MNN/3rd_party/flatbuffers/include" \
+    -isystem "${plugin_root}/MNN/apps/frameworks/3rd_party/include" \
+    "${plugin_root}/android/src/main/cpp/mnn_llm_session_adapter.cpp" \
+    "${plugin_root}/android/src/main/cpp/mnn_native_diagnostics.cpp" \
+    "${plugin_root}/android/src/main/cpp/mnn_hexagon_model_check.cpp" \
     "${plugin_root}/test/native/mnn_prefill_integration_test.cpp" \
     -L"${build_dir}" -Wl,-rpath,"${build_dir}" -lMNN -o "${test_binary}"
-"${test_binary}" "${model_config}"
+"${test_binary}" "${model_config}" cpu --resume-prefill
+adapter_report="${test_binary}.adapter.log"
+"${test_binary}" "${model_config}" --adapter-only | tee "${adapter_report}"
+grep -q '^Real adapter KV regression passed:' "${adapter_report}" || {
+    printf 'The adapter process exited without completing its regression checks.\n' >&2
+    exit 1
+}

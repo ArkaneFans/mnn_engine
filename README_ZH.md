@@ -40,7 +40,7 @@ CMake、Android NDK、Linux 或 WSL。
 | Android 最低版本 | API 28 |
 | 插件 Compile SDK | 35 |
 | Flutter | 3.35.0 或更高版本 |
-| MNN | 3.6.1，commit `d407447ed56c4121a11ccbd266dc184ca1ead0c2` |
+| MNN | 3.6.2，commit `7e3c6fb5225d3ccf22807ee641332669df34650d` |
 | 推理后端 | CPU（默认）、OpenCL、Vulkan buffer；可选 Hexagon |
 | 活跃模型 | 同一时间一个 |
 | 并发生成 | 同一时间一个 |
@@ -268,6 +268,38 @@ curl http://127.0.0.1:8081/v1/chat/completions \
 
 `max_tokens` 可选。省略或设为 `-1` 时，模型会持续生成，直到输出结束标记或
 运行时达到上下文容量上限。也支持 `max_completion_tokens` 和 `n_predict` 别名。
+
+每次请求可用 `enable_thinking: true/false` 控制思考开关。OpenAI 客户端也可使用
+`reasoning_effort: "none"` 关闭；`minimal`、`low`、`medium`、`high`、`xhigh`、
+`max` 均表示开启，行为相同，暂不区分深度或提供独立思考 token 预算。
+两个字段矛盾或类型／取值无效时返回 HTTP 400（`invalid_request`）。省略两个字段
+或设为 `null`，该请求使用已加载模型的默认设置。
+
+开关同时适用于流式、非流式和带工具的请求，通过 MNN 的
+`jinja.context.enable_thinking` 生效，要求模型模板支持该变量。每次请求保留
+模型自有模板变量，并使用本次工具上下文；开关覆盖不影响下一次请求，也不修改
+模型文件。输出 token 上限仍同时包含思考和正文。
+
+默认启用跨请求 KV 复用，每次请求仍需提交完整 `messages`。驻留 session 直接
+使用 MNN 官方的 `prompt_cache` 和 `syncPromptCache()`：比较去掉思考块后的
+历史文本，保留已有模型状态，只计算新增输入。Qwen3.5 模板即使省略旧轮次的
+思考块，含线性 Attention 的模型也能延续普通追加对话。
+设置 `"cache_prompt": false` 可清空缓存，并让本次请求完整计算；下一次请求
+恢复默认缓存策略，但不会复用这次关闭缓存的请求。
+
+非流式响应的 `usage.prompt_tokens` 仍统计完整输入，
+`usage.prompt_tokens_details.cached_tokens` 报告复用数量；流式与非流式请求的
+完成日志均记录输入及缓存 token 数。缓存仅属于当前单个驻留 session，没有
+conversation ID、磁盘快照或多对话缓存池。与官方应用一样，模型状态仍可能
+包含渲染历史中省略的旧思考内容，因此复用结果不保证与完整历史从头计算一致。
+规范化历史发生编辑或裁剪时，沿用 MNN 的完整 prefill 回退。
+
+推理开始前取消会保留原缓存。decode 中取消时，调用官方 `eraseHistory()`
+恢复已完成的 prompt，并同步不含部分回复的请求历史；线性 Attention 由 MNN
+重新 prefill 保留的历史以重建状态。增量 prefill 中途取消时，能够验证原状态
+就恢复上一份完整对话；首次 prefill 尚未完成时不建立完整历史缓存。回退排除
+已入队但没有 KV 的 token。不一致的状态、卸载模型和原生失败会使缓存失效。
+媒体输入、token 压缩、推测解码和不支持的注意力布局完整计算。
 
 使用 `MnnServerBindMode.allInterfaces` 时 Server 会监听 `0.0.0.0`，能够通过
 Wi-Fi、热点、VPN 等 IPv4 接口访问。除非设备处于可信网络，否则应始终配置 API Key。

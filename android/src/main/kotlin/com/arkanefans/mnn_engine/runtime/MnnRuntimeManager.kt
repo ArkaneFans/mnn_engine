@@ -33,6 +33,7 @@ class MnnRuntimeManager(
         val decodeUs: Long,
         val sampleUs: Long,
         val finishReason: String,
+        val cachedPromptTokens: Int = 0,
     )
 
     private val lock = Any()
@@ -147,6 +148,8 @@ class MnnRuntimeManager(
         temperature: Double?,
         topP: Double?,
         maxTokens: Int,
+        thinkingEnabled: Boolean? = null,
+        cachePrompt: Boolean = true,
         canGenerate: () -> Boolean = { true },
         onToken: (String) -> Boolean,
     ): GenerationResult {
@@ -157,7 +160,7 @@ class MnnRuntimeManager(
             }
             try {
                 // Announce generation before checking admission: a concurrent
-                // stop either closes this gate or waits to cancel after reset().
+                // stop either closes this gate or waits until preparation completes.
                 if (!canGenerate()) throw ServerStoppingException()
                 val currentSession = nativeSession
                     ?: throw IllegalStateException("No MNN model is loaded.")
@@ -165,7 +168,7 @@ class MnnRuntimeManager(
                     ?: throw IllegalStateException("No active MNN model is available.")
                 // Prepare before cancellation can acquire this lock. Native generate()
                 // must not clear a stop received while the request is starting.
-                currentSession.reset()
+                currentSession.prepareGeneration()
                 currentSession to currentModel
             } catch (error: Throwable) {
                 generating.set(false)
@@ -178,12 +181,17 @@ class MnnRuntimeManager(
         var failureMessage: String? = null
         return try {
             val config = JsonParser.parseString(baseConfigJson).asJsonObject
+            config.addProperty("cache_prompt", cachePrompt)
             temperature?.let { config.addProperty("temperature", it) }
             topP?.let { config.addProperty("topP", it) }
             if (maxTokens >= 0) config.addProperty("max_new_tokens", maxTokens)
             val jinja = config.getAsJsonObject("jinja") ?: JsonObject().also { config.add("jinja", it) }
             val context = jinja.getAsJsonObject("context") ?: JsonObject().also { jinja.add("context", it) }
             context.add("tools", tools.deepCopy())
+            // Native owns the merged, loaded template default. Only send an
+            // explicit request override so defaults from llm_config stay intact.
+            context.remove("enable_thinking")
+            thinkingEnabled?.let { context.addProperty("enable_thinking", it) }
             val metrics = session.generate(
                 Gson().toJson(messages),
                 config.toString(),
@@ -197,10 +205,11 @@ class MnnRuntimeManager(
                 decodeUs = metrics.decodeUs,
                 sampleUs = metrics.sampleUs,
                 finishReason = metrics.finishReason,
+                cachedPromptTokens = metrics.cachedPromptTokens,
             ).also {
                 logStore.info(
                     "request",
-                    "Generation completed: prompt=${it.promptTokens}, completion=${it.completionTokens}, finish=${it.finishReason}",
+                    "Generation completed: prompt=${it.promptTokens}, cached=${it.cachedPromptTokens}, completion=${it.completionTokens}, finish=${it.finishReason}",
                 )
             }
         } catch (error: Throwable) {

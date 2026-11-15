@@ -72,6 +72,8 @@ void inspectOps(const flatbuffers::Vector<flatbuffers::Offset<MNN::Op>>* ops, Mn
     for (const auto* op : *ops) {
         if (op->type() == MNN::OpType_Attention) {
             const auto* attention = op->main_as_AttentionParam();
+            result.hasKvCache = result.hasKvCache || (attention != nullptr && attention->kv_cache());
+            result.hasUncachedAttention = result.hasUncachedAttention || attention == nullptr || !attention->kv_cache();
             // MNN 3.6.1's standard Hexagon Attention always emits C4 and
             // requires C4 V input. Streaming state Attention is a separate
             // multi-output path; do not infer its layout from this flag.
@@ -82,6 +84,9 @@ void inspectOps(const flatbuffers::Vector<flatbuffers::Offset<MNN::Op>>* ops, Mn
                     result.firstNonC4Attention = op->name() ? op->name()->str() : "<unnamed>";
                 }
             }
+        } else if (op->type() == MNN::OpType_LinearAttention) {
+            result.hasKvCache = true;
+            result.hasLinearAttention = true;
         }
     }
 }

@@ -1,4 +1,4 @@
-# MNN 3.6.1 already implements chunked prefill, but has no cancellation hook.
+# MNN 3.6.2 already implements chunked prefill, but has no cancellation hook.
 # Patch build copies only, as with the tokenizer compatibility fix. Every
 # anchor is checked so an upstream update requires reviewing the integration.
 function(mnn_engine_prefill_replace source_var original replacement)
@@ -78,20 +78,23 @@ function(mnn_engine_prepare_prefill source_dir output_dir)
     MNN::Express::ExecutorScope::Current()->gc(); // after prefill
     if (mnn_engine::cancelPrefill(mContext.get())) return mContext->output_tokens;]=])
 
-    # mRoPE uses the full input's positions, offset from the start of this
-    # prefill, rather than repeating positions 0..chunk_size for every chunk.
+    # Index the complete multimodal positions for each prefill chunk. Keep
+    # upstream relative spatial axes unshifted and support all mRoPE axes.
     mnn_engine_prefill_replace(omni
-        [=[            int mT_val = i < mPositionIds.mT.size() ? mPositionIds.mT[i] : i;
-            int mH_val = i < mPositionIds.mH.size() ? mPositionIds.mH[i] : i;
-            int mW_val = i < mPositionIds.mW.size() ? mPositionIds.mW[i] : i;
-            ptr[i] = mT_val + mContext->all_seq_len;
-            ptr[i + seq_len] = mH_val + mContext->all_seq_len;
-            ptr[i + seq_len * 2] = mW_val + mContext->all_seq_len;]=]
-        [=[            int base = mnn_engine::prefillBasePosition;
+        [=[        for (int i = 0; i < seq_len; i++) {
+            for (int axis = 0; axis < axes; axis++) {
+                int offset = (relativeSpatial && axis > 0) ? 0 : mContext->all_seq_len;
+                ptr[i + seq_len * axis] = axisValue(axis, i) + offset;
+            }
+        }]=]
+        [=[        int base = mnn_engine::prefillBasePosition;
+        for (int i = 0; i < seq_len; i++) {
             int index = mContext->all_seq_len - base + i;
-            ptr[i] = (index < mPositionIds.mT.size() ? mPositionIds.mT[index] : index) + base;
-            ptr[i + seq_len] = (index < mPositionIds.mH.size() ? mPositionIds.mH[index] : index) + base;
-            ptr[i + seq_len * 2] = (index < mPositionIds.mW.size() ? mPositionIds.mW[index] : index) + base;]=])
+            for (int axis = 0; axis < axes; axis++) {
+                int offset = (relativeSpatial && axis > 0) ? 0 : base;
+                ptr[i + seq_len * axis] = axisValue(axis, index) + offset;
+            }
+        }]=])
     mnn_engine_prefill_replace(omni
         "    extraArgs.insert(extraArgs.end(), mExtraArgs.begin(), mExtraArgs.end());"
         [=[    for (auto extra : mExtraArgs) {

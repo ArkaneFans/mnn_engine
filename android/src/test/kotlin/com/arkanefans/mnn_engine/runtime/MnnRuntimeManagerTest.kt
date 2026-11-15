@@ -21,6 +21,43 @@ import kotlin.test.assertTrue
 
 class MnnRuntimeManagerTest {
     @Test
+    fun generationPreparationRetainsKvAndCachePolicyIsRequestScoped() {
+        Mockito.mockStatic(Log::class.java).use {
+            val fixture = Fixture { metrics("stop").copy(promptTokens = 9, cachedPromptTokens = 6) }
+            val result = fixture.generate(cachePrompt = false)
+            fixture.generate()
+            assertEquals(9, result.promptTokens)
+            assertEquals(6, result.cachedPromptTokens)
+            assertEquals(listOf(false, true), fixture.requestConfigs.map { it.get("cache_prompt").asBoolean })
+            Mockito.verify(fixture.session, Mockito.times(2)).prepareGeneration()
+            Mockito.verify(fixture.session, Mockito.never()).reset()
+        }
+    }
+
+    @Test
+    fun thinkingOverridesAreBuiltFromTheModelConfigForEachGeneration() {
+        Mockito.mockStatic(Log::class.java).use {
+            for (defaultThinking in listOf(true, false)) {
+                val fixture = Fixture(
+                    """{"jinja":{"context":{"enable_thinking":$defaultThinking,"custom":"keep"}}}""",
+                ) { metrics("cancelled") }
+                fixture.generate(thinkingEnabled = !defaultThinking)
+                fixture.generate()
+                fixture.generate(thinkingEnabled = defaultThinking)
+                val contexts = fixture.requestConfigs.map { it.getAsJsonObject("jinja").getAsJsonObject("context") }
+                assertEquals(listOf(!defaultThinking, null, defaultThinking), contexts.map {
+                    it.get("enable_thinking")?.asBoolean
+                })
+                assertTrue(contexts.all { it.get("custom").asString == "keep" && it.getAsJsonArray("tools").size() == 0 })
+            }
+            val fixture = Fixture { metrics("stop") }
+            fixture.generate(thinkingEnabled = false)
+            fixture.generate()
+            assertTrue(!fixture.requestConfigs.last().getAsJsonObject("jinja").getAsJsonObject("context").has("enable_thinking"))
+        }
+    }
+
+    @Test
     fun equalModelIdsDoNotReuseAResidentSessionFromADifferentDirectory() {
         Mockito.mockStatic(Log::class.java).use {
             val fixture = Fixture { metrics("stop") }
@@ -133,13 +170,13 @@ class MnnRuntimeManagerTest {
         Mockito.mockStatic(Log::class.java).use {
             var cancelled = false
             val fixture = Fixture { metrics(if (cancelled) "cancelled" else "length") }
-            Mockito.doAnswer { cancelled = false; null }.`when`(fixture.session).reset()
+            Mockito.doAnswer { cancelled = false; null }.`when`(fixture.session).prepareGeneration()
             Mockito.doAnswer { cancelled = true; null }.`when`(fixture.session).cancel()
             fixture.onGenerating = { fixture.manager.cancelGeneration() }
 
             assertEquals("cancelled", fixture.generate().finishReason)
             val order = Mockito.inOrder(fixture.session)
-            order.verify(fixture.session).reset()
+            order.verify(fixture.session).prepareGeneration()
             order.verify(fixture.session).cancel()
             assertSame(fixture.model, fixture.manager.activeModel())
             assertNull(fixture.snapshots.last().lastError)
@@ -217,7 +254,7 @@ class MnnRuntimeManagerTest {
         }
     }
 
-    private class Fixture(generate: () -> MnnNativeSession.GenerationMetrics) {
+    private class Fixture(baseConfigJson: String = "{}", generate: () -> MnnNativeSession.GenerationMetrics) {
         val model = MnnModelInfo(
             modelId = "qwen", modelKey = "qwen", displayName = "Qwen", vendor = null,
             modelDirPath = "unused", configPath = "unused/config.json", sizeBytes = 0,
@@ -227,9 +264,11 @@ class MnnRuntimeManagerTest {
         var onGenerating: () -> Unit = {}
         var generationCalls = 0
             private set
+        val requestConfigs = mutableListOf<JsonObject>()
         val session = Mockito.mock(MnnNativeSession::class.java) { invocation ->
             if (invocation.method.name == "generate") {
                 generationCalls++
+                requestConfigs.add(com.google.gson.JsonParser.parseString(invocation.getArgument<String>(1)).asJsonObject)
                 generate()
             } else {
                 Mockito.RETURNS_DEFAULTS.answer(invocation)
@@ -253,14 +292,17 @@ class MnnRuntimeManagerTest {
             setResidentField(it, "nativeSession", session)
             setResidentField(it, "activeModel", model)
             setResidentField(it, "loadedOptions", MnnLoadOptions())
+            setResidentField(it, "baseConfigJson", baseConfigJson)
         }
 
-        fun generate(canGenerate: () -> Boolean = { true }) = manager.generate(
+        fun generate(thinkingEnabled: Boolean? = null, cachePrompt: Boolean = true, canGenerate: () -> Boolean = { true }) = manager.generate(
             messages = listOf(JsonObject().apply {
                 addProperty("role", "user")
                 addProperty("content", "hello")
             }),
             tools = JsonArray(), temperature = null, topP = null, maxTokens = 8,
+            thinkingEnabled = thinkingEnabled,
+            cachePrompt = cachePrompt,
             canGenerate = canGenerate,
             onToken = { false },
         )

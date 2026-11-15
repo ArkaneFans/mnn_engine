@@ -41,3 +41,5 @@ mkdir -p "${test_dir}"
     "${plugin_root}/test/native/mnn_log_bridge_test.cpp" \
     -Wl,--wrap=__android_log_print -ldl -o "${test_dir}/mnn_log_bridge_test"
 "${test_dir}/mnn_log_bridge_test"
+
+bash "${plugin_root}/scripts/test_mnn_prefill_positions.sh" "${plugin_root}"
